@@ -1,0 +1,59 @@
+"""Read the DJ_PYDANTIC_AGENTS setting and apply the defaults."""
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from typing import Any
+
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+SETTING_NAME = "DJ_PYDANTIC_AGENTS"
+
+# The project must set these keys. Each value is a dotted path.
+REQUIRED_KEYS = ("SPECS", "MODEL_FACTORY", "EVENT_TRANSPORT", "TASK_RUNNER")
+
+DEFAULTS: Mapping[str, Any] = {
+    "DEPS_FACTORY": None,
+    "MODEL_NAMES": {},
+    "PERMISSION": "dj_pydantic_agents.permissions.StaffPermission",
+}
+
+
+@dataclass(frozen=True, kw_only=True)
+class PackageSettings:
+    specs: str
+    deps_factory: str | None
+    model_factory: str
+    model_names: Mapping[str, str]
+    permission: str
+    event_transport: str
+    task_runner: str
+
+
+def raw_settings() -> Mapping[str, Any] | None:
+    return getattr(settings, SETTING_NAME, None)
+
+
+def missing_keys() -> tuple[str, ...]:
+    configured = raw_settings() or {}
+    return tuple(key for key in REQUIRED_KEYS if not configured.get(key))
+
+
+def load_settings() -> PackageSettings:
+    """Read the setting on each call, so that override_settings works."""
+    if missing := missing_keys():
+        msg = f"{SETTING_NAME} needs these keys: {', '.join(missing)}."
+        raise ImproperlyConfigured(msg)
+    values = {**DEFAULTS, **(raw_settings() or {})}
+    return PackageSettings(
+        specs=values["SPECS"],
+        deps_factory=values["DEPS_FACTORY"],
+        model_factory=values["MODEL_FACTORY"],
+        model_names=values["MODEL_NAMES"],
+        permission=values["PERMISSION"],
+        event_transport=values["EVENT_TRANSPORT"],
+        task_runner=values["TASK_RUNNER"],
+    )

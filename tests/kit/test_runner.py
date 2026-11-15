@@ -158,3 +158,32 @@ class TestTurnRunnerApproval(SimpleTestCase):
         second = self._continue(approved=False)
 
         assert second.reply_text == f"Done: {DENIED_MESSAGE}"
+
+    def test_ignores_the_decisions_of_an_earlier_stop(self):
+        second = TurnRunner().run(
+            spec=MAIL_SPEC,
+            model=self.model,
+            history=list(self.first.new_messages),
+            prompt=None,
+            pending=self.first.pending_approvals,
+            decisions={"call-0": False, "call-1": True},
+            deps=None,
+            on_event=self.events.append,
+        )
+
+        assert second.reply_text == "Done: sent to ada"
+
+    def test_a_new_prompt_closes_an_open_tool_call(self):
+        # The resume failed, so the history ends with a call that has no result.
+        second = TurnRunner().run(
+            spec=MAIL_SPEC,
+            model=text_model("Hello"),
+            history=list(self.first.new_messages),
+            prompt="Never mind",
+            pending=None,
+            decisions=None,
+            deps=None,
+            on_event=self.events.append,
+        )
+
+        assert second.reply_text == "Hello"

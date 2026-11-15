@@ -49,6 +49,13 @@ DATABASES = {
     },
 }
 
+DJ_PYDANTIC_AGENTS = {
+    "SPECS": "tests.fakes.build_specs",
+    "MODEL_FACTORY": "tests.fakes.FakeModelFactory",
+    "EVENT_TRANSPORT": "tests.fakes.FakeTransport",
+    "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
+}
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

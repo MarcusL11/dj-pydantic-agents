@@ -38,3 +38,17 @@ class ConversationPageProjectionDTO(InternalDTO):
     lines: tuple[TranscriptLineDTO, ...]
     active_turn: ActiveTurnProjectionDTO | None
     approvals: tuple[ApprovalProjectionDTO, ...]
+
+
+class GetConversationAgentQueryDTO(InternalDTO):
+    conversation_id: str
+    user_id: UserId
+
+
+class GetApprovalAgentQueryDTO(InternalDTO):
+    approval_id: str
+    user_id: UserId
+
+
+class AgentNameProjectionDTO(InternalDTO):
+    agent_name: str

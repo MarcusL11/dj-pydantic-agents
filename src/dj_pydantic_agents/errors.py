@@ -19,3 +19,11 @@ class ApprovalNotPending(DjPydanticAgentsError):  # noqa: N818
 
 class TurnStateConflict(DjPydanticAgentsError):  # noqa: N818
     """The turn is not in the state that this step needs."""
+
+
+class AgentNotFound(DjPydanticAgentsError):  # noqa: N818
+    """No agent spec has this name."""
+
+
+class AgentAccessDenied(DjPydanticAgentsError):  # noqa: N818
+    """The permission extension point does not let this user use the agent."""

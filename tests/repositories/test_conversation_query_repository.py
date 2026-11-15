@@ -8,8 +8,12 @@ from pydantic_ai.messages import UserPromptPart
 from pydantic_ai.tools import DeferredToolRequests
 
 from dj_pydantic_agents.dtos.conversation_queries import ActiveTurnProjectionDTO
+from dj_pydantic_agents.dtos.conversation_queries import AgentNameProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import ApprovalProjectionDTO
+from dj_pydantic_agents.dtos.conversation_queries import GetApprovalAgentQueryDTO
+from dj_pydantic_agents.dtos.conversation_queries import GetConversationAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
+from dj_pydantic_agents.errors import ApprovalNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.history import pending_to_json
@@ -129,3 +133,55 @@ class TestGetConversationPage(TestCase):
                 args_json='{"to":"ada"}',
             ),
         )
+
+
+class TestGetAgentNames(TestCase):
+    owner: User
+    approval: PendingApproval
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = UserFactory.create()
+        conversation = ConversationFactory.create(owner=cls.owner, agent_name="mail")
+        cls.approval = PendingApprovalFactory.create(
+            turn=TurnFactory.create(conversation=conversation, requested_by=cls.owner),
+        )
+
+    def test_reads_the_agent_of_a_conversation_and_of_an_approval(self):
+        repository = ConversationQueryRepository()
+        conversation_id = self.approval.turn.conversation_id
+
+        conversation_agent = repository.get_conversation_agent(
+            query=GetConversationAgentQueryDTO(
+                conversation_id=conversation_id,
+                user_id=self.owner.pk,
+            ),
+        )
+        approval_agent = repository.get_approval_agent(
+            query=GetApprovalAgentQueryDTO(
+                approval_id=self.approval.id,
+                user_id=self.owner.pk,
+            ),
+        )
+
+        assert conversation_agent == AgentNameProjectionDTO(agent_name="mail")
+        assert approval_agent == AgentNameProjectionDTO(agent_name="mail")
+
+    def test_another_user_reads_no_agent(self):
+        other = UserFactory.create()
+        repository = ConversationQueryRepository()
+
+        with self.assertRaises(ConversationNotFound):
+            repository.get_conversation_agent(
+                query=GetConversationAgentQueryDTO(
+                    conversation_id=self.approval.turn.conversation_id,
+                    user_id=other.pk,
+                ),
+            )
+        with self.assertRaises(ApprovalNotPending):
+            repository.get_approval_agent(
+                query=GetApprovalAgentQueryDTO(
+                    approval_id=self.approval.id,
+                    user_id=other.pk,
+                ),
+            )

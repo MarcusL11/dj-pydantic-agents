@@ -14,6 +14,9 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 - Protocols exist only in `extensions.py`. Repositories stay concrete.
 - The package keeps its own `InternalDTO` and `ExternalDTO`. A test checks that their configuration matches the house style.
 - The package has its own composition root in `composition.py`. Do not register code in `AppConfig.ready()`.
+  - One exception: `ready()` imports `checks.py`, because Django registers a system check when its module loads.
+- The public API is the `build_*` functions in `composition.py`, the DTOs, the errors, the settings and the signals. The service and repository classes are private.
+- `create_autospec()` reads the annotations of the class that it copies. So a class that a test autospecs imports its annotation types at runtime, with `# noqa: TC001`.
 
 ## Versions
 

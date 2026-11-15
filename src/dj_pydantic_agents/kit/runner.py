@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.messages import repair_messages
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.tools import DeferredToolResults
 from pydantic_ai.tools import ToolDenied
@@ -65,6 +66,10 @@ class TurnRunner:
             msg = "Give a prompt, or give the pending approvals with their decisions."
             raise ValueError(msg)
 
+        if prompt is not None:
+            # A failed resume can leave a tool call with no result. Pydantic AI
+            # refuses a new prompt after it, so close such calls first.
+            history = repair_messages(history)
         agent = _build_agent(spec=spec, model=model)
         # message_history, not conversation: with conversation, the usage limits
         # count the requests of the whole conversation.
@@ -110,10 +115,14 @@ def _approval_results(
 ) -> DeferredToolResults | None:
     if pending is None or decisions is None:
         return None
+    # The decisions can also hold the calls of an earlier stop of the turn.
+    # Pydantic AI refuses a decision for a call that is not pending.
+    pending_ids = {call.tool_call_id for call in pending.approvals}
     return pending.build_results(
         approvals={
             tool_call_id: True if approved else ToolDenied(message=DENIED_MESSAGE)
             for tool_call_id, approved in decisions.items()
+            if tool_call_id in pending_ids
         },
     )
 

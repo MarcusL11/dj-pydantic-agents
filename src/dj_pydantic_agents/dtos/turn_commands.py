@@ -112,3 +112,7 @@ class ApprovalDecidedResultDTO(InternalDTO):
     approval_id: str
     turn_id: str
     requeued: bool
+
+
+class RunTurnCommandDTO(InternalDTO):
+    turn_id: str
