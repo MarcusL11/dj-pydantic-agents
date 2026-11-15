@@ -13,6 +13,20 @@ class TestLoadSettings(SimpleTestCase):
         assert settings.deps_factory is None
         assert settings.model_names == {}
         assert settings.permission == "dj_pydantic_agents.permissions.StaffPermission"
+        assert settings.sanitizer == (
+            "dj_pydantic_agents.rendering.nh3_sanitizer.Nh3Sanitizer"
+        )
+
+    @override_settings(
+        DJ_PYDANTIC_AGENTS={
+            "SPECS": "tests.fakes.build_specs",
+            "MODEL_FACTORY": "tests.fakes.FakeModelFactory",
+            "EVENT_TRANSPORT": "tests.fakes.FakeTransport",
+            "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
+        },
+    )
+    def test_redis_url_has_no_default(self):
+        assert load_settings().redis_url is None
 
     @override_settings(DJ_PYDANTIC_AGENTS={"SPECS": "tests.fakes.build_specs"})
     def test_names_each_missing_key(self):

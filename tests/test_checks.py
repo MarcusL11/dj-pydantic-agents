@@ -40,8 +40,21 @@ class KeywordsRunner:
         pass
 
 
+class PublishOnlyTransport:
+    def publish(self, *, turn_id: str, event: object) -> str:
+        return "1-0"
+
+
+class WrongKeywordSanitizer:
+    def to_html(self, *, markdown: str) -> str:
+        return markdown
+
+
 def deps_without_conversation(*, agent_name: str, user_id: UserId) -> None:
     pass
+
+
+REDIS_TRANSPORT = "dj_pydantic_agents.transports.redis_stream.RedisStreamTransport"
 
 
 def with_keys(**overrides: str | None) -> dict[str, str | None]:
@@ -82,6 +95,21 @@ class TestCheckSettings(SimpleTestCase):
                 "E004",
                 id="keyword",
             ),
+            param(
+                {"EVENT_TRANSPORT": "tests.test_checks.PublishOnlyTransport"},
+                "E004",
+                id="no_read",
+            ),
+            param(
+                {"SANITIZER": "tests.test_checks.WrongKeywordSanitizer"},
+                "E004",
+                id="sanitizer",
+            ),
+            param(
+                {"EVENT_TRANSPORT": REDIS_TRANSPORT, "REDIS_URL": None},
+                "E005",
+                id="no_redis_url",
+            ),
         ],
     )
     def test_reports_a_wrong_extension_point(self, overrides, error_id):
@@ -93,3 +121,15 @@ class TestCheckSettings(SimpleTestCase):
 
         with override_settings(DJ_PYDANTIC_AGENTS=with_keys(TASK_RUNNER=runner)):
             assert check_settings() == []
+
+    def test_accepts_the_redis_transport_with_a_redis_url(self):
+        values = with_keys(EVENT_TRANSPORT=REDIS_TRANSPORT)
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert check_settings() == []
+
+    def test_a_bad_transport_path_is_one_error(self):
+        values = with_keys(EVENT_TRANSPORT="tests.nothing.Transport")
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert self.check_ids() == ["dj_pydantic_agents.E002"]

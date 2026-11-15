@@ -63,6 +63,23 @@ type TurnEventDTO = Annotated[
 
 TURN_EVENT_ADAPTER: TypeAdapter[TurnEventDTO] = TypeAdapter(TurnEventDTO)
 
+# A turn sends no event after one of these.
+FINAL_EVENT_KINDS = frozenset({"approval_requested", "turn_done", "turn_failed"})
+
+# The event ID before the first event of a turn.
+START_EVENT_ID = "0"
+
+
+class StreamedTurnEventDTO(ExternalDTO):
+    """An event that a transport read, with its event ID."""
+
+    event_id: str
+    event: TurnEventDTO
+
+    @property
+    def is_final(self) -> bool:
+        return self.event.kind in FINAL_EVENT_KINDS
+
 
 def to_turn_event(event: AgentStreamEvent) -> TurnEventDTO | None:
     """Map one Pydantic AI stream event to a turn event, or to None to skip it.

@@ -19,6 +19,9 @@ DEFAULTS: Mapping[str, Any] = {
     "DEPS_FACTORY": None,
     "MODEL_NAMES": {},
     "PERMISSION": "dj_pydantic_agents.permissions.StaffPermission",
+    "SANITIZER": "dj_pydantic_agents.rendering.nh3_sanitizer.Nh3Sanitizer",
+    # The Redis transport needs it. The E005 check finds a missing value.
+    "REDIS_URL": None,
 }
 
 
@@ -31,6 +34,8 @@ class PackageSettings:
     permission: str
     event_transport: str
     task_runner: str
+    sanitizer: str
+    redis_url: str | None
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -56,4 +61,6 @@ def load_settings() -> PackageSettings:
         permission=values["PERMISSION"],
         event_transport=values["EVENT_TRANSPORT"],
         task_runner=values["TASK_RUNNER"],
+        sanitizer=values["SANITIZER"],
+        redis_url=values["REDIS_URL"],
     )

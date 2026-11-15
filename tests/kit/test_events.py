@@ -5,12 +5,17 @@ from pydantic_ai.messages import PartStartEvent
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import TextPartDelta
 from pydantic_ai.messages import ToolCallPart
+from unittest_parametrize import param
+from unittest_parametrize import parametrize
 
 from dj_pydantic_agents.kit.events import TURN_EVENT_ADAPTER
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import PendingApprovalDTO
+from dj_pydantic_agents.kit.events import StreamedTurnEventDTO
 from dj_pydantic_agents.kit.events import TextDeltaEventDTO
 from dj_pydantic_agents.kit.events import ToolCallEventDTO
+from dj_pydantic_agents.kit.events import TurnDoneEventDTO
+from dj_pydantic_agents.kit.events import TurnFailedEventDTO
 from dj_pydantic_agents.kit.events import to_turn_event
 from tests.testcases import SimpleTestCase
 
@@ -60,3 +65,24 @@ class TestTurnEventAdapter(SimpleTestCase):
         loaded = TURN_EVENT_ADAPTER.validate_json(TURN_EVENT_ADAPTER.dump_json(event))
 
         assert loaded == event
+
+
+class TestStreamedTurnEvent(SimpleTestCase):
+    @parametrize(
+        ("event", "is_final"),
+        [
+            param(TextDeltaEventDTO(text="Hi"), False, id="text_delta"),
+            param(
+                ToolCallEventDTO(tool_call_id="c1", tool_name="send_mail"),
+                False,
+                id="tool_call",
+            ),
+            param(ApprovalRequestedEventDTO(approvals=()), True, id="approval"),
+            param(TurnDoneEventDTO(text="Hi"), True, id="done"),
+            param(TurnFailedEventDTO(error_code="model_error"), True, id="failed"),
+        ],
+    )
+    def test_marks_the_final_events(self, event, is_final):
+        streamed = StreamedTurnEventDTO(event_id="1-0", event=event)
+
+        assert streamed.is_final is is_final

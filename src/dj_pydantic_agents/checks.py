@@ -20,23 +20,32 @@ from dj_pydantic_agents.extensions import AgentPermission
 from dj_pydantic_agents.extensions import DepsFactory
 from dj_pydantic_agents.extensions import EventTransport
 from dj_pydantic_agents.extensions import ModelFactory
+from dj_pydantic_agents.extensions import ReplySanitizer
 from dj_pydantic_agents.extensions import TaskRunner
 from dj_pydantic_agents.kit.specs import AgentSpec
+from dj_pydantic_agents.transports.redis_stream import RedisStreamTransport
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from collections.abc import Mapping
     from collections.abc import Sequence
 
     from django.apps.config import AppConfig
 
-# The key, the method that the object must have (None for a function), and
-# the method of the Protocol with the keyword arguments of the contract.
-_CONTRACTS: tuple[tuple[str, str | None, Callable[..., Any]], ...] = (
-    ("DEPS_FACTORY", None, DepsFactory.__call__),
-    ("MODEL_FACTORY", "build", ModelFactory.build),
-    ("PERMISSION", "can_use", AgentPermission.can_use),
-    ("EVENT_TRANSPORT", "publish", EventTransport.publish),
-    ("TASK_RUNNER", "enqueue", TaskRunner.enqueue),
+# A method that the object must have: its name (None for a function), and the
+# method of the Protocol with the keyword arguments of the contract.
+type _Method = tuple[str | None, Callable[..., Any]]
+
+_CONTRACTS: tuple[tuple[str, tuple[_Method, ...]], ...] = (
+    ("DEPS_FACTORY", ((None, DepsFactory.__call__),)),
+    ("MODEL_FACTORY", (("build", ModelFactory.build),)),
+    ("PERMISSION", (("can_use", AgentPermission.can_use),)),
+    (
+        "EVENT_TRANSPORT",
+        (("publish", EventTransport.publish), ("read", EventTransport.read)),
+    ),
+    ("SANITIZER", (("to_html", ReplySanitizer.to_html),)),
+    ("TASK_RUNNER", (("enqueue", TaskRunner.enqueue),)),
 )
 
 
@@ -54,16 +63,11 @@ def check_settings(
         ]
     configured = raw_settings() or {}
     errors = _spec_errors(configured["SPECS"])
-    for key, method, contract in _CONTRACTS:
+    for key, methods in _CONTRACTS:
         path = configured.get(key)
         if path is not None:
-            errors += _contract_errors(
-                key=key,
-                path=path,
-                method=method,
-                contract=contract,
-            )
-    return errors
+            errors += _contract_errors(key=key, path=path, methods=methods)
+    return errors + _redis_url_errors(configured)
 
 
 def _spec_errors(path: str) -> list[Error]:
@@ -86,12 +90,32 @@ def _contract_errors(
     *,
     key: str,
     path: str,
-    method: str | None,
-    contract: Callable[..., Any],
+    methods: tuple[_Method, ...],
 ) -> list[Error]:
     target, errors = _import(key=key, path=path)
     if target is None:
         return errors
+    return [
+        error
+        for method, contract in methods
+        for error in _method_errors(
+            key=key,
+            path=path,
+            target=target,
+            method=method,
+            contract=contract,
+        )
+    ]
+
+
+def _method_errors(
+    *,
+    key: str,
+    path: str,
+    target: Any,
+    method: str | None,
+    contract: Callable[..., Any],
+) -> list[Error]:
     function = target if method is None else getattr(target, method, None)
     if function is None or not callable(function):
         return [_error("E004", f"{key} ({path}) has no {method}() method.")]
@@ -102,6 +126,20 @@ def _contract_errors(
                 f"{key} ({path}) needs these keyword arguments: {', '.join(missing)}.",
             ),
         ]
+    return []
+
+
+def _redis_url_errors(configured: Mapping[str, Any]) -> list[Error]:
+    try:
+        transport = import_string(configured["EVENT_TRANSPORT"])
+    except ImportError:
+        return []
+    uses_redis = isinstance(transport, type) and issubclass(
+        transport,
+        RedisStreamTransport,
+    )
+    if uses_redis and not configured.get("REDIS_URL"):
+        return [_error("E005", "The Redis transport needs REDIS_URL.")]
     return []
 
 

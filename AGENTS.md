@@ -26,7 +26,7 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 
 ## Commands
 
-- Start the test database: `docker compose up -d` (PostgreSQL on port 5433).
+- Start PostgreSQL and Redis for the tests: `docker compose up -d` (PostgreSQL on port 5433, Redis on port 6380).
 - Tests: `uv run pytest`. Run them with the `run_test` tool.
 - Lint and format: `uv run ruff check .` and `uv run ruff format .`.
 - Types: `uv run mypy src tests`.

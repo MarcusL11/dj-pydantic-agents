@@ -54,6 +54,7 @@ DJ_PYDANTIC_AGENTS = {
     "MODEL_FACTORY": "tests.fakes.FakeModelFactory",
     "EVENT_TRANSPORT": "tests.fakes.FakeTransport",
     "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
+    "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6380/0"),
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
