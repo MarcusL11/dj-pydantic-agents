@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
   "django>=6.0",
-  "pydantic>=2.12",
+  "pydantic>=2.12.2",
   "pydantic-ai-harness==0.68.*",
   "pydantic-ai-slim[openai]==2.68.*",
   "python-ulid>=4.1",
