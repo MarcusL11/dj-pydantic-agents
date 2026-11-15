@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.test import modify_settings
 from django.test import override_settings
 from unittest_parametrize import param
 from unittest_parametrize import parametrize
@@ -54,6 +55,8 @@ def deps_without_conversation(*, agent_name: str, user_id: UserId) -> None:
     pass
 
 
+CELERY_APP = "dj_pydantic_agents.contrib.celery"
+CELERY_RUNNER = f"{CELERY_APP}.runner.CeleryTaskRunner"
 REDIS_TRANSPORT = "dj_pydantic_agents.transports.redis_stream.RedisStreamTransport"
 
 
@@ -133,3 +136,18 @@ class TestCheckSettings(SimpleTestCase):
 
         with override_settings(DJ_PYDANTIC_AGENTS=values):
             assert self.check_ids() == ["dj_pydantic_agents.E002"]
+
+    def test_the_celery_runner_needs_the_celery_app(self):
+        values = with_keys(TASK_RUNNER=CELERY_RUNNER)
+
+        with (
+            override_settings(DJ_PYDANTIC_AGENTS=values),
+            modify_settings(INSTALLED_APPS={"remove": [CELERY_APP]}),
+        ):
+            assert self.check_ids() == ["dj_pydantic_agents.E006"]
+
+    def test_accepts_the_celery_runner_with_the_celery_app(self):
+        values = with_keys(TASK_RUNNER=CELERY_RUNNER)
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert check_settings() == []

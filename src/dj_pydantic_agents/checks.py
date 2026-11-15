@@ -9,6 +9,7 @@ from annotationlib import Format
 from typing import TYPE_CHECKING
 from typing import Any
 
+from django.apps import apps
 from django.core.checks import Error
 from django.core.checks import register
 from django.utils.module_loading import import_string
@@ -31,6 +32,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from django.apps.config import AppConfig
+
+CELERY_APP = "dj_pydantic_agents.contrib.celery"
+CELERY_TASK_RUNNER = f"{CELERY_APP}.runner.CeleryTaskRunner"
 
 # A method that the object must have: its name (None for a function), and the
 # method of the Protocol with the keyword arguments of the contract.
@@ -67,7 +71,7 @@ def check_settings(
         path = configured.get(key)
         if path is not None:
             errors += _contract_errors(key=key, path=path, methods=methods)
-    return errors + _redis_url_errors(configured)
+    return errors + _redis_url_errors(configured) + _celery_app_errors(configured)
 
 
 def _spec_errors(path: str) -> list[Error]:
@@ -140,6 +144,19 @@ def _redis_url_errors(configured: Mapping[str, Any]) -> list[Error]:
     )
     if uses_redis and not configured.get("REDIS_URL"):
         return [_error("E005", "The Redis transport needs REDIS_URL.")]
+    return []
+
+
+def _celery_app_errors(configured: Mapping[str, Any]) -> list[Error]:
+    # A string compare, so that the core app does not import celery.
+    uses_celery = configured["TASK_RUNNER"] == CELERY_TASK_RUNNER
+    if uses_celery and not apps.is_installed(CELERY_APP):
+        return [
+            _error(
+                "E006",
+                f"The Celery task runner needs {CELERY_APP} in INSTALLED_APPS.",
+            ),
+        ]
     return []
 
 

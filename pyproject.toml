@@ -25,6 +25,11 @@ dependencies = [
   "redis>=8.0",
 ]
 
+[project.optional-dependencies]
+celery = [
+  "celery>=5.6.3",
+]
+
 [dependency-groups]
 dev = [
   "coverage==7.14.1",

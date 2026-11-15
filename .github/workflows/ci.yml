@@ -54,11 +54,11 @@ jobs:
 
       - name: Install the locked versions
         if: matrix.resolution == 'locked'
-        run: uv sync --locked
+        run: uv sync --locked --all-extras
 
       - name: Install the lowest direct versions
         if: matrix.resolution == 'lowest-direct'
-        run: uv sync --resolution lowest-direct
+        run: uv sync --resolution lowest-direct --all-extras
 
       - name: Lint
         run: uv run --no-sync ruff check .

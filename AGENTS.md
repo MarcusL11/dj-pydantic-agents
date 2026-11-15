@@ -27,6 +27,7 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 ## Commands
 
 - Start PostgreSQL and Redis for the tests: `docker compose up -d` (PostgreSQL on port 5433, Redis on port 6380).
+- Install the extras for development: `uv sync --all-extras`.
 - Tests: `uv run pytest`. Run them with the `run_test` tool.
 - Lint and format: `uv run ruff check .` and `uv run ruff format .`.
 - Types: `uv run mypy src tests`.
@@ -36,4 +37,5 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 - `.github/workflows/ci.yml` runs ruff, mypy and pytest on each push to `main` and on each pull request.
 - The `locked` job tests the versions in `uv.lock`. The `lowest-direct` job tests the lowest versions that `pyproject.toml` lets in, for example Django 6.0.
 - When you change a lower bound in `pyproject.toml`, the `lowest-direct` job tests it.
+- Both jobs install each extra, so the jobs also test `contrib.celery`.
 - `[tool.uv] exclude-newer` keeps `uv.lock` the same on each device and in CI. Do not remove it.

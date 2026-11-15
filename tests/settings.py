@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.sessions",
     "dj_pydantic_agents",
+    "dj_pydantic_agents.contrib.celery",
 ]
 
 # The admin system checks need these settings.
@@ -56,6 +57,11 @@ DJ_PYDANTIC_AGENTS = {
     "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
     "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6380/0"),
 }
+
+# tests/celery_app.py reads these. Eager mode runs each task in the test.
+CELERY_BROKER_URL = "memory://"
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

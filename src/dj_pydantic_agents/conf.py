@@ -22,6 +22,8 @@ DEFAULTS: Mapping[str, Any] = {
     "SANITIZER": "dj_pydantic_agents.rendering.nh3_sanitizer.Nh3Sanitizer",
     # The Redis transport needs it. The E005 check finds a missing value.
     "REDIS_URL": None,
+    # The Celery queue of the turn task. None selects the default queue.
+    "CELERY_QUEUE": None,
 }
 
 
@@ -36,6 +38,7 @@ class PackageSettings:
     task_runner: str
     sanitizer: str
     redis_url: str | None
+    celery_queue: str | None
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -63,4 +66,5 @@ def load_settings() -> PackageSettings:
         task_runner=values["TASK_RUNNER"],
         sanitizer=values["SANITIZER"],
         redis_url=values["REDIS_URL"],
+        celery_queue=values["CELERY_QUEUE"],
     )

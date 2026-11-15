@@ -25,8 +25,11 @@ class TestLoadSettings(SimpleTestCase):
             "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
         },
     )
-    def test_redis_url_has_no_default(self):
-        assert load_settings().redis_url is None
+    def test_redis_url_and_celery_queue_have_no_default(self):
+        settings = load_settings()
+
+        assert settings.redis_url is None
+        assert settings.celery_queue is None
 
     @override_settings(DJ_PYDANTIC_AGENTS={"SPECS": "tests.fakes.build_specs"})
     def test_names_each_missing_key(self):
