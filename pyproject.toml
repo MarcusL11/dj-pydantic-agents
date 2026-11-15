@@ -1,0 +1,152 @@
+[project]
+name = "dj-pydantic-agents"
+version = "0.1.0"
+description = "Agent turns, streaming and approvals for Django, on Pydantic AI."
+readme = "README.md"
+license = { text = "Not open source" }
+authors = [
+  { name = "MarcusL11", email = "marclert@gmail.com" },
+]
+requires-python = ">=3.14"
+classifiers = [
+  "Framework :: Django",
+  "Framework :: Django :: 6.0",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "django>=6.0",
+  "pydantic>=2.12",
+  "pydantic-ai-harness==0.68.*",
+  "pydantic-ai-slim[openai]==2.68.*",
+]
+
+[dependency-groups]
+dev = [
+  "coverage==7.14.1",
+  "django-stubs[compatible-mypy]==6.0.5",
+  "factory-boy==3.3.3",
+  "mypy==2.1.0",
+  "psycopg[binary]==3.3.4",
+  "pytest==9.0.3",
+  "pytest-django==4.12.0",
+  "ruff==0.15.16",
+  "unittest-parametrize==1.9.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+# ==== uv ====
+[tool.uv]
+# Pydantic AI 2.68 is newer than the 7-day exclude-newer window of this device.
+# The ==2.68.* and ==0.68.* pins limit the versions. genai-prices has no pin, so it gets a fixed date.
+exclude-newer-package = { pydantic-ai-slim = false, pydantic-ai-harness = false, pydantic-graph = false, genai-prices = "2026-11-11T00:00:00Z" }
+
+# ==== ruff ====
+[tool.ruff]
+extend-exclude = [
+  "*/migrations/*.py",
+]
+
+lint.select = [
+  "A",
+  "ASYNC",
+  "B",
+  "BLE",
+  "C4",
+  "C90",
+  "COM",
+  "DJ",
+  "DTZ",
+  "E",
+  "EM",
+  "ERA",
+  "EXE",
+  "F",
+  "FA",
+  "FBT",
+  "FLY",
+  "G",
+  "I",
+  "ICN",
+  "INP",
+  "INT",
+  "ISC",
+  "N",
+  "PD",
+  "PERF",
+  "PGH",
+  "PIE",
+  "PL",
+  "PT",
+  "PTH",
+  "PYI",
+  "Q",
+  "RET",
+  "RSE",
+  "RUF",
+  "S",
+  "SIM",
+  "SLF",
+  "SLOT",
+  "T10",
+  "T20",
+  "TC",
+  "TID",
+  "TRY",
+  "UP",
+  "W",
+  "YTT",
+]
+lint.ignore = [
+  "PT027",  # Django test classes check errors with the assertRaises forms
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "S101",   # Use of assert detected https://docs.astral.sh/ruff/rules/assert/
+  "SIM102", # Sometimes a nested if is clearer
+]
+lint.isort.force-single-line = true
+
+# ==== pyproject-fmt ====
+[tool.pyproject-fmt]
+keep_full_version = true
+
+# ==== pytest ====
+[tool.pytest]
+addopts = [
+  "--ds=tests.settings",
+  "--reuse-db",
+  "--import-mode=importlib",
+]
+minversion = "9.0"
+pythonpath = [ "." ]
+python_files = [
+  "tests.py",
+  "test_*.py",
+]
+
+# ==== Coverage ====
+[tool.coverage.run]
+source = [ "dj_pydantic_agents" ]
+omit = [ "*/migrations/*" ]
+
+# ==== mypy ====
+[tool.mypy]
+python_version = "3.14"
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+plugins = [
+  "mypy_django_plugin.main",
+]
+
+[[tool.mypy.overrides]]
+# Django migrations should not produce any errors:
+module = "*.migrations.*"
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "tests.settings"

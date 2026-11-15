@@ -1,0 +1,15 @@
+# PostgreSQL for the package tests. Start it with: docker compose up -d
+services:
+  postgres:
+    image: docker.io/postgres:16
+    environment:
+      POSTGRES_DB: dj_pydantic_agents
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data: {}
