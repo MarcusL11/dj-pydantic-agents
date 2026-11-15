@@ -1,0 +1,40 @@
+"""The query and the projection of the conversation page."""
+
+from typing import Literal
+
+from dj_pydantic_agents.dtos.turn_commands import UserId  # noqa: TC001
+from dj_pydantic_agents.kit.dtos import InternalDTO
+from dj_pydantic_agents.kit.transcript import TranscriptLineDTO  # noqa: TC001
+
+
+class GetConversationPageQueryDTO(InternalDTO):
+    conversation_id: str
+    user_id: UserId
+
+
+type ActiveTurnStatus = Literal["queued", "running", "waiting_approval"]
+
+
+class ActiveTurnProjectionDTO(InternalDTO):
+    """unsaved_prompt is the prompt of a first run, before its messages are saved."""
+
+    turn_id: str
+    status: ActiveTurnStatus
+    unsaved_prompt: str | None
+
+
+class ApprovalProjectionDTO(InternalDTO):
+    """A tool call of the active turn that waits for a decision."""
+
+    approval_id: str
+    tool_name: str
+    args_json: str
+
+
+class ConversationPageProjectionDTO(InternalDTO):
+    conversation_id: str
+    agent_name: str
+    title: str
+    lines: tuple[TranscriptLineDTO, ...]
+    active_turn: ActiveTurnProjectionDTO | None
+    approvals: tuple[ApprovalProjectionDTO, ...]

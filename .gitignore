@@ -12,3 +12,6 @@ wheels/
 # Editor swap files
 *.swp
 *.swo
+
+# macOS folder files
+.DS_Store
