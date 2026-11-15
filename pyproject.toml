@@ -40,6 +40,8 @@ build-backend = "uv_build"
 
 # ==== uv ====
 [tool.uv]
+# The same 7-day window on each device and in CI, so that uv.lock does not change.
+exclude-newer = "7 days"
 # Pydantic AI 2.68 is newer than the 7-day exclude-newer window of this device.
 # The ==2.68.* and ==0.68.* pins limit the versions. genai-prices has no pin, so it gets a fixed date.
 exclude-newer-package = { pydantic-ai-slim = false, pydantic-ai-harness = false, pydantic-graph = false, genai-prices = "2026-11-11T00:00:00Z" }
