@@ -2,6 +2,7 @@
 
 from typing import Any
 from typing import Literal
+from typing import Self
 from uuid import UUID
 
 from pydantic import Field
@@ -82,7 +83,7 @@ class SaveTurnResultCommandDTO(InternalDTO):
     usage: TurnUsageDTO
 
     @model_validator(mode="after")
-    def _approvals_match_pending(self) -> SaveTurnResultCommandDTO:
+    def _approvals_match_pending(self) -> Self:
         if (self.pending is None) != (not self.approvals):
             msg = "Give the pending requests and their approvals together."
             raise ValueError(msg)
