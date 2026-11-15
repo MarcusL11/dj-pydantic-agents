@@ -25,3 +25,11 @@ def new_turn_id() -> str:
 
 def new_approval_id() -> str:
     return prefixed_ulid("apr")
+
+
+def new_plan_credential_id() -> str:
+    return prefixed_ulid("pcr")
+
+
+def new_plan_login_id() -> str:
+    return prefixed_ulid("plg")

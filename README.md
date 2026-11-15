@@ -144,6 +144,95 @@ uv run --with uvicorn uvicorn tests.demo.asgi:application --port 8001
 
 Then open http://127.0.0.1:8001/.
 
+## Codex: the ChatGPT plan of each user
+
+Install the extra: `dj-pydantic-agents[codex]`. Each user connects their own ChatGPT plan. The turns of that user then use the `openai-codex` provider of Pydantic AI with the tokens of that user.
+
+```python
+INSTALLED_APPS = [
+    ...,
+    "dj_pydantic_agents",
+    "dj_pydantic_agents.contrib.codex",
+]
+
+DJ_PYDANTIC_AGENTS = {
+    ...,
+    "MODEL_FACTORY": "dj_pydantic_agents.contrib.codex.model_factory.CodexModelFactory",
+    "MODEL_NAMES": {"chat": "gpt-6.1-sol", "summary": "gpt-6-luna"},
+    # Fernet keys. The first key encrypts, each key decrypts. Keep them out of the code.
+    "CODEX_TOKEN_KEYS": env.list("CODEX_TOKEN_KEYS"),
+}
+```
+
+Make a key with this command:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+To change the key, put the new key first and keep the old key second. A login or a token refresh then encrypts with the new key. The check `dj_pydantic_agents.E007` finds a missing or bad key.
+
+The encrypted value also holds the user ID. A copy of the value to the row of another user does not decrypt.
+
+### The login pages
+
+The login uses a copy and paste of an address. After the sign-in, the browser opens `http://localhost:1455/auth/callback?code=...`. That page does not load on a server. The user copies its address into a form. A login must complete in 10 minutes.
+
+The project writes the two pages. Each view calls one service:
+
+```python
+from dj_pydantic_agents.contrib.codex.composition import build_plan_login_service
+from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
+
+
+@staff_member_required
+def plan_login(request, error=""):
+    started = build_plan_login_service().start_login(
+        command=StartPlanLoginCommandDTO(user_id=request.user.pk),
+    )
+    return render(
+        request,
+        "dashboard/plan_login.html",
+        {
+            "authorization_url": started.authorization_url,
+            "form_action": reverse("dashboard:plan_login_complete"),
+            "error": error,
+        },
+    )
+
+
+@staff_member_required
+@require_POST
+def plan_login_complete(request):
+    try:
+        build_plan_login_service().complete_login(
+            command=CompletePlanLoginCommandDTO(
+                user_id=request.user.pk,
+                pasted_url=request.POST.get("pasted_url", ""),
+            ),
+        )
+    except PlanLoginFailed as error:
+        return plan_login(request, error=str(error))
+    return redirect("dashboard:agent_chat_list")
+```
+
+The page template includes the form:
+
+```django
+{% include "dj_pydantic_agents/codex/login_form.html" %}
+```
+
+The form classes are `djpa-codex-login`, with `__steps`, `__link`, `__error`, `__form`, `__input` and `__submit`.
+
+### The tokens in the workers
+
+- A turn of a user with no login fails with the code `plan_not_connected`.
+- A refresh token works one time. Before a refresh, a worker takes a lease of 30 seconds on the row of the user. Another worker waits, then uses the new tokens.
+- The provider does not use background mode, because the backend cannot resume a background response.
+- The model names in `MODEL_NAMES` go to the backend unchanged. The backend accepts or refuses them.
+
 ## Development
 
 ```bash

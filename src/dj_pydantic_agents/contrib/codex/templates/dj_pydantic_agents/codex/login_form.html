@@ -1,0 +1,25 @@
+{% load i18n %}
+{% comment %}
+The ChatGPT plan login, with a copy and paste of an address. The project page
+renders it with render(), so that csrf_token works. The context:
+authorization_url (from start_login()), form_action (the URL of the project
+view that calls complete_login()) and error (a message, or empty).
+{% endcomment %}
+<div class="djpa-codex-login">
+  <ol class="djpa-codex-login__steps">
+    <li>
+      <a href="{{ authorization_url }}" target="_blank" rel="noopener noreferrer" class="djpa-codex-login__link">{% translate "Sign in with ChatGPT" %}</a>
+    </li>
+    <li>{% translate "After the sign-in, the browser opens a page on localhost that does not load. That is correct." %}</li>
+    <li>{% translate "Copy the full address of that page, and paste it here." %}</li>
+  </ol>
+  {% if error %}
+    <p class="djpa-codex-login__error">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="{{ form_action }}" class="djpa-codex-login__form">
+    {% csrf_token %}
+    <input type="url" name="pasted_url" required class="djpa-codex-login__input"
+           placeholder="http://localhost:1455/auth/callback?code=...">
+    <button type="submit" class="djpa-codex-login__submit">{% translate "Connect" %}</button>
+  </form>
+</div>

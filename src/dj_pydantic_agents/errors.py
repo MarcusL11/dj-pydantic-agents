@@ -1,8 +1,15 @@
 """Named failures of the core app, without HTTP dependencies."""
 
+from typing import ClassVar
+
 
 class DjPydanticAgentsError(Exception):
-    """The base class of the package errors."""
+    """The base class of the package errors.
+
+    A turn that fails with an error that has an error_code records that code.
+    """
+
+    error_code: ClassVar[str | None] = None
 
 
 class ConversationNotFound(DjPydanticAgentsError):  # noqa: N818
@@ -34,6 +41,8 @@ class TurnStateConflict(DjPydanticAgentsError):  # noqa: N818
 
 class AgentNotFound(DjPydanticAgentsError):  # noqa: N818
     """No agent spec has this name."""
+
+    error_code = "agent_not_found"
 
 
 class AgentAccessDenied(DjPydanticAgentsError):  # noqa: N818

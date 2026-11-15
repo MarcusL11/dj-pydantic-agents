@@ -10,6 +10,7 @@ from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnUsageDTO
 from dj_pydantic_agents.dtos.turn_events import TurnFinishedEventDTO
 from dj_pydantic_agents.errors import AgentNotFound
+from dj_pydantic_agents.errors import DjPydanticAgentsError
 from dj_pydantic_agents.kit.errors import error_code_for
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
@@ -44,9 +45,6 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
-
-# The error code of a turn whose agent spec no longer exists.
-AGENT_NOT_FOUND = "agent_not_found"
 
 
 class TurnRunService:
@@ -135,11 +133,7 @@ class TurnRunService:
             combiner.flush()
 
     def _fail(self, *, run_input: TurnRunInputDTO, error: Exception) -> None:
-        error_code = (
-            AGENT_NOT_FOUND
-            if isinstance(error, AgentNotFound)
-            else error_code_for(error)
-        )
+        error_code = _error_code(error)
         logger.error(
             "Turn %s failed with %s.",
             run_input.turn_id,
@@ -188,6 +182,13 @@ class TurnRunService:
                 error_code=error_code,
             ),
         )
+
+
+def _error_code(error: Exception) -> str:
+    """The code of a package error, else the code of a Pydantic AI error."""
+    if isinstance(error, DjPydanticAgentsError) and error.error_code:
+        return error.error_code
+    return error_code_for(error)
 
 
 def _usage(usage: RunUsage) -> TurnUsageDTO:

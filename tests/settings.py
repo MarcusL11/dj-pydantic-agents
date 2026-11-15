@@ -1,6 +1,9 @@
 """Minimal Django settings for the package tests."""
 
 import os
+from typing import Any
+
+from cryptography.fernet import Fernet
 
 SECRET_KEY = "dj-pydantic-agents-tests-only"  # noqa: S105
 
@@ -16,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "dj_pydantic_agents",
     "dj_pydantic_agents.contrib.celery",
+    "dj_pydantic_agents.contrib.codex",
     "dj_pydantic_agents.contrib.datastar",
 ]
 
@@ -53,12 +57,14 @@ DATABASES = {
     },
 }
 
-DJ_PYDANTIC_AGENTS = {
+DJ_PYDANTIC_AGENTS: dict[str, Any] = {
     "SPECS": "tests.fakes.build_specs",
     "MODEL_FACTORY": "tests.fakes.FakeModelFactory",
     "EVENT_TRANSPORT": "tests.fakes.FakeTransport",
     "TASK_RUNNER": "tests.fakes.FakeTaskRunner",
     "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6380/0"),
+    # A new key at each start. A project keeps its keys out of the code.
+    "CODEX_TOKEN_KEYS": [Fernet.generate_key().decode()],
 }
 
 # tests/celery_app.py reads these. Eager mode runs each task in the test.

@@ -9,6 +9,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from collections.abc import Sequence
 
 SETTING_NAME = "DJ_PYDANTIC_AGENTS"
 
@@ -27,6 +28,8 @@ DEFAULTS: Mapping[str, Any] = {
     # A queued or running turn with no change for this time has lost its worker.
     # Make it longer than the hard time limit of the turn task.
     "STALE_TURN_SECONDS": 1800,
+    # The Fernet keys of contrib.codex. The first key encrypts, each key decrypts.
+    "CODEX_TOKEN_KEYS": (),
 }
 
 
@@ -43,6 +46,7 @@ class PackageSettings:
     redis_url: str | None
     celery_queue: str | None
     stale_turn_seconds: int
+    codex_token_keys: Sequence[str]
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -72,4 +76,5 @@ def load_settings() -> PackageSettings:
         redis_url=values["REDIS_URL"],
         celery_queue=values["CELERY_QUEUE"],
         stale_turn_seconds=values["STALE_TURN_SECONDS"],
+        codex_token_keys=values["CODEX_TOKEN_KEYS"],
     )
