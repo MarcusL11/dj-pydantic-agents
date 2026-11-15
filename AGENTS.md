@@ -31,6 +31,7 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 - Tests: `uv run pytest`. Run them with the `run_test` tool.
 - Lint and format: `uv run ruff check .` and `uv run ruff format .`.
 - Types: `uv run mypy src tests`.
+- A test of the views in a browser: the demo project in `tests/demo/`. The README section "The demo" has the commands. It needs an ASGI server, because `runserver` cannot stream.
 
 ## CI
 

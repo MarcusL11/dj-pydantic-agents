@@ -1,0 +1,7 @@
+{% extends "demo/base.html" %}
+{% block content %}
+  <p><a href="{% url 'demo:list' %}">All conversations</a></p>
+  <h1>{{ page.title|default:"New conversation" }}</h1>
+  <p>Send "slow" for a reply of 90 seconds, "mail" for an approval, or any other text.</p>
+  {% include "dj_pydantic_agents/chat.html" %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% load i18n %}
+{% comment %}
+A tool call that waits for a decision. The context: approval (approval_id,
+tool_name and args_json) and csrf_token. After a decision, the approve view
+renders the partial "actions" again, with decision set. An override of this
+template must keep that partial.
+{% endcomment %}
+<div id="djpa-approval-{{ approval.approval_id }}" class="djpa-approval">
+  <span class="djpa-approval__tool">{{ approval.tool_name }}</span>
+  <pre class="djpa-approval__args">{{ approval.args_json }}</pre>
+  {% partialdef actions inline %}
+    <div id="djpa-approval-{{ approval.approval_id }}-actions" class="djpa-approval__actions">
+      {% if decision == "approved" %}
+        <span class="djpa-approval__decision">{% translate "Approved" %}</span>
+      {% elif decision == "denied" %}
+        <span class="djpa-approval__decision">{% translate "Denied" %}</span>
+      {% else %}
+        <form class="djpa-approval__form"
+              data-on:submit="@post('{% url 'dj_pydantic_agents:decide_approval' approval.approval_id %}', {contentType: 'form', headers: {'X-CSRFToken': '{{ csrf_token }}'}})">
+          <button type="submit" name="approved" value="true" class="djpa-approval__approve">{% translate "Approve" %}</button>
+          <button type="submit" name="approved" value="false" class="djpa-approval__deny">{% translate "Deny" %}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endpartialdef %}
+</div>

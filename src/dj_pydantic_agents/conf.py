@@ -24,6 +24,9 @@ DEFAULTS: Mapping[str, Any] = {
     "REDIS_URL": None,
     # The Celery queue of the turn task. None selects the default queue.
     "CELERY_QUEUE": None,
+    # A queued or running turn with no change for this time has lost its worker.
+    # Make it longer than the hard time limit of the turn task.
+    "STALE_TURN_SECONDS": 1800,
 }
 
 
@@ -39,6 +42,7 @@ class PackageSettings:
     sanitizer: str
     redis_url: str | None
     celery_queue: str | None
+    stale_turn_seconds: int
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -67,4 +71,5 @@ def load_settings() -> PackageSettings:
         sanitizer=values["SANITIZER"],
         redis_url=values["REDIS_URL"],
         celery_queue=values["CELERY_QUEUE"],
+        stale_turn_seconds=values["STALE_TURN_SECONDS"],
     )

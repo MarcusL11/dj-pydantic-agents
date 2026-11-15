@@ -1,0 +1,15 @@
+{% load i18n %}
+{% comment %}
+The end of a run. The stream view puts it in the place of the reply. The
+context: reply_text, approvals, error_code and csrf_token.
+{% endcomment %}
+{% if reply_text %}
+  {% include "dj_pydantic_agents/transcript_line.html" with kind="assistant" text=reply_text only %}
+{% endif %}
+{% for approval in approvals %}
+  {% include "dj_pydantic_agents/approval_card.html" with approval=approval csrf_token=csrf_token only %}
+{% endfor %}
+{% if error_code %}
+  {% blocktranslate asvar error_text %}The reply failed ({{ error_code }}). Send a new message to try again.{% endblocktranslate %}
+  {% include "dj_pydantic_agents/transcript_line.html" with kind="error" text=error_text only %}
+{% endif %}

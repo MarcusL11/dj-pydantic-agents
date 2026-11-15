@@ -41,6 +41,109 @@ CELERY_TASK_ANNOTATIONS = {
 }
 ```
 
+## Datastar
+
+Install the extra: `dj-pydantic-agents[datastar]`. The app has three views: send a message, decide an approval, and stream a turn. Each view returns Datastar patches. The project writes each full page.
+
+```python
+INSTALLED_APPS = [
+    ...,
+    "dj_pydantic_agents",
+    "dj_pydantic_agents.contrib.datastar",
+]
+
+DJ_PYDANTIC_AGENTS = {
+    ...,
+    # A queued or running turn with no status change for this time lost its
+    # worker. The stream view then fails it with worker_lost. Make it longer
+    # than the hard time limit of the turn task.
+    "STALE_TURN_SECONDS": 1800,  # The default.
+}
+```
+
+Include the URLs. The namespace is `dj_pydantic_agents`:
+
+```python
+urlpatterns = [
+    ...,
+    path("agents/", include("dj_pydantic_agents.contrib.datastar.urls")),
+]
+```
+
+The stream view streams. Serve the project with an ASGI server, for example uvicorn. `runserver` cannot stream.
+
+Keep `CONN_MAX_AGE` at 0, the default, in `DATABASES`. The Django documentation says to disable persistent connections in async mode. Use the PostgreSQL pool of Django if you need a pool. The views free their database connection before the stream waits for events.
+
+### The project pages
+
+The project writes the chat page and the "New conversation" view. Each view calls one service:
+
+```python
+from dj_pydantic_agents.composition import build_conversation_command_service
+from dj_pydantic_agents.composition import build_conversation_query_service
+from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
+from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
+
+
+@staff_member_required
+@require_POST
+def new_conversation(request):
+    created = build_conversation_command_service().create_conversation(
+        command=CreateConversationCommandDTO(owner_id=request.user.pk, agent_name="assistant"),
+    )
+    return redirect("dashboard:agent_chat", conversation_id=created.conversation_id)
+
+
+@staff_member_required
+def agent_chat(request, conversation_id):
+    page = build_conversation_query_service().get_conversation_page(
+        query=GetConversationPageQueryDTO(conversation_id=conversation_id, user_id=request.user.pk),
+    )
+    return render(request, "dashboard/agent_chat.html", {"page": page})
+```
+
+`list_conversations()` of the query service gives the conversations of a user with an agent, newest first.
+
+The page template loads Datastar 1 and includes the chat:
+
+```django
+{% include "dj_pydantic_agents/chat.html" %}
+```
+
+The template needs `page` and `csrf_token` in the context. `render()` adds `csrf_token`. Each package form sends the token in the `X-CSRFToken` header, so the package does not need `django-datastar`.
+
+A Cotton project can wrap the include in a component, for example `templates/cotton/agent_chat.html`:
+
+```django
+{% include "dj_pydantic_agents/chat.html" %}
+```
+
+Then the page uses `<c-agent-chat :page="page" />`.
+
+### Templates and class names
+
+The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `run_end.html`, `approval_card.html` and `message_form.html`. To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+
+The package has no CSS. Style these classes:
+
+- `djpa-chat`, `djpa-transcript`
+- `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__tool`, `djpa-line__data`
+- `djpa-reply`, `djpa-reply__text`
+- `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
+- `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
+
+### The demo
+
+`tests/demo/` is a small project for a test in a browser. It uses the Redis transport, a scripted model and a thread task runner:
+
+```bash
+docker compose up -d
+uv run django-admin migrate --settings=tests.demo.settings --pythonpath=.
+uv run --with uvicorn uvicorn tests.demo.asgi:application --port 8001
+```
+
+Then open http://127.0.0.1:8001/.
+
 ## Development
 
 ```bash

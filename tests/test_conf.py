@@ -4,6 +4,8 @@ from django.test import override_settings
 from dj_pydantic_agents.conf import load_settings
 from tests.testcases import SimpleTestCase
 
+DEFAULT_STALE_TURN_SECONDS = 1800
+
 
 class TestLoadSettings(SimpleTestCase):
     def test_applies_the_defaults(self):
@@ -16,6 +18,7 @@ class TestLoadSettings(SimpleTestCase):
         assert settings.sanitizer == (
             "dj_pydantic_agents.rendering.nh3_sanitizer.Nh3Sanitizer"
         )
+        assert settings.stale_turn_seconds == DEFAULT_STALE_TURN_SECONDS
 
     @override_settings(
         DJ_PYDANTIC_AGENTS={

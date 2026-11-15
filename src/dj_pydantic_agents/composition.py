@@ -28,6 +28,8 @@ from dj_pydantic_agents.services.turn_run_service import TurnRunService
 if TYPE_CHECKING:
     from dj_pydantic_agents.dtos.turn_commands import UserId
     from dj_pydantic_agents.extensions import DepsFactory
+    from dj_pydantic_agents.extensions import EventTransport
+    from dj_pydantic_agents.extensions import ReplySanitizer
     from dj_pydantic_agents.kit.specs import AgentSpec
 
 
@@ -39,6 +41,7 @@ def build_conversation_command_service() -> ConversationCommandService:
         specs=specs_by_name(settings.specs),
         permission=import_string(settings.permission)(),
         task_runner=import_string(settings.task_runner)(),
+        stale_turn_seconds=settings.stale_turn_seconds,
     )
 
 
@@ -58,9 +61,19 @@ def build_turn_run_service() -> TurnRunService:
         specs=specs_by_name(settings.specs),
         deps_factory=_deps_factory(settings.deps_factory),
         model_factory=import_string(settings.model_factory)(),
-        transport=import_string(settings.event_transport)(),
+        transport=build_event_transport(),
         runner=TurnRunner(),
     )
+
+
+def build_event_transport() -> EventTransport:
+    """The transport of EVENT_TRANSPORT. A stream view reads the events with it."""
+    return import_string(load_settings().event_transport)()
+
+
+def build_reply_sanitizer() -> ReplySanitizer:
+    """The sanitiser of SANITIZER. It turns the Markdown of a reply into HTML."""
+    return import_string(load_settings().sanitizer)()
 
 
 def specs_by_name(path: str) -> dict[str, AgentSpec]:

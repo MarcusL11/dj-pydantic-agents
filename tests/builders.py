@@ -8,6 +8,7 @@ from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
+from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
 
 CONVERSATION_ID = "cnv_01m7f5c8m8xzp0zy3vmbgzbdw9"
 TURN_ID = "trn_01m7f5c8m8xzp0zy3vmbgzbdw9"
@@ -38,7 +39,12 @@ def a_started_result() -> TurnStartedResultDTO:
 
 
 def a_decided_result(**overrides: Any) -> ApprovalDecidedResultDTO:
-    values = {"approval_id": APPROVAL_ID, "turn_id": TURN_ID, "requeued": False}
+    values = {
+        "approval_id": APPROVAL_ID,
+        "turn_id": TURN_ID,
+        "conversation_id": CONVERSATION_ID,
+        "requeued": False,
+    }
     return ApprovalDecidedResultDTO(**{**values, **overrides})
 
 
@@ -56,3 +62,16 @@ def a_page(**overrides: Any) -> ConversationPageProjectionDTO:
         "approvals": (),
     }
     return ConversationPageProjectionDTO(**{**values, **overrides})
+
+
+def a_snapshot(**overrides: Any) -> TurnSnapshotProjectionDTO:
+    values: dict[str, Any] = {
+        "turn_id": TURN_ID,
+        "conversation_id": CONVERSATION_ID,
+        "status": "running",
+        "reply_text": "",
+        "error_code": "",
+        "approvals": (),
+        "decided_tool_call_ids": (),
+    }
+    return TurnSnapshotProjectionDTO(**{**values, **overrides})

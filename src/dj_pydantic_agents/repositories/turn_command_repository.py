@@ -1,5 +1,6 @@
 """Complete atomic mutations of conversations, turns and approvals."""
 
+from datetime import timedelta
 from typing import Literal
 
 from django.db import transaction
@@ -13,6 +14,7 @@ from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
@@ -92,6 +94,7 @@ class TurnCommandRepository:
         ).update(
             status=Turn.Status.RUNNING,
             started_at=Coalesce(F("started_at"), Now()),
+            status_changed_at=Now(),
         )
         if not claimed:
             return None
@@ -150,6 +153,7 @@ class TurnCommandRepository:
         )
         Turn.objects.filter(id=turn.id).update(
             status=status,
+            status_changed_at=Now(),
             finished_at=Now() if status == Turn.Status.DONE else None,
             requests=F("requests") + usage.requests,
             tool_calls=F("tool_calls") + usage.tool_calls,
@@ -174,8 +178,34 @@ class TurnCommandRepository:
         conversation.save(update_fields=["pending_approvals", "updated_at"])
         turn.status = Turn.Status.FAILED
         turn.error_code = command.error_code
-        turn.finished_at = timezone.now()
-        turn.save(update_fields=["status", "error_code", "finished_at"])
+        turn.finished_at = turn.status_changed_at = timezone.now()
+        turn.save(
+            update_fields=["status", "error_code", "finished_at", "status_changed_at"],
+        )
+
+    @transaction.atomic
+    def fail_stale_turn(self, *, command: FailStaleTurnCommandDTO) -> None:
+        """Fail a queued or running turn with no status change for stale_seconds.
+
+        The conditional update does nothing when the worker changes the turn
+        first. The pending approvals go, as in fail_turn().
+        """
+        now = timezone.now()
+        failed = Turn.objects.filter(
+            id=command.turn_id,
+            status__in=(Turn.Status.QUEUED, Turn.Status.RUNNING),
+            status_changed_at__lt=now - timedelta(seconds=command.stale_seconds),
+        ).update(
+            status=Turn.Status.FAILED,
+            error_code=command.error_code,
+            finished_at=now,
+            status_changed_at=now,
+        )
+        if failed:
+            Conversation.objects.filter(turns__id=command.turn_id).update(
+                pending_approvals=None,
+                updated_at=now,
+            )
 
     @transaction.atomic
     def decide_approval(
@@ -215,10 +245,12 @@ class TurnCommandRepository:
         if requeued:
             Turn.objects.filter(id=approval.turn_id).update(
                 status=Turn.Status.QUEUED,
+                status_changed_at=Now(),
             )
         return ApprovalDecidedResultDTO(
             approval_id=approval.id,
             turn_id=approval.turn_id,
+            conversation_id=approval.turn.conversation_id,
             requeued=requeued,
         )
 

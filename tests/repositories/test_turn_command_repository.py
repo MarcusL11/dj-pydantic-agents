@@ -1,17 +1,21 @@
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError
 from django.db import transaction
+from django.utils import timezone
 from pydantic_ai.messages import ModelRequest
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.messages import UserPromptPart
 from pydantic_ai.tools import DeferredToolRequests
+from unittest_parametrize import parametrize
 
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
@@ -62,6 +66,14 @@ REPLY_MESSAGES = tuple(
 )
 INPUT_TOKENS = 120
 OUTPUT_TOKENS = 30
+STALE_SECONDS = 1800
+
+
+def age_status(turn: Turn, *, seconds: int) -> None:
+    """Move the latest status change of the turn back by some seconds."""
+    Turn.objects.filter(id=turn.id).update(
+        status_changed_at=timezone.now() - timedelta(seconds=seconds),
+    )
 
 
 class TestCreateConversation(TestCase):
@@ -242,6 +254,15 @@ class TestClaimTurn(TestCase):
         self.turn.refresh_from_db()
         assert started_at is None
         assert self.turn.started_at is not None
+
+    def test_a_claim_moves_the_status_time(self):
+        age_status(self.turn, seconds=STALE_SECONDS)
+        old = Turn.objects.get(id=self.turn.id).status_changed_at
+
+        self.claim()
+
+        self.turn.refresh_from_db()
+        assert self.turn.status_changed_at > old
 
     def test_keeps_the_first_start_time(self):
         self.claim()
@@ -475,6 +496,16 @@ class TestDecideApproval(TestCase):
         assert result.requeued is True
         assert self.turn.status == Turn.Status.QUEUED
 
+    def test_the_requeue_moves_the_status_time(self):
+        age_status(self.turn, seconds=STALE_SECONDS)
+        old = Turn.objects.get(id=self.turn.id).status_changed_at
+
+        self.decide(self.first)
+        self.decide(self.second)
+
+        self.turn.refresh_from_db()
+        assert self.turn.status_changed_at > old
+
     def test_a_second_decision_is_rejected(self):
         self.decide(self.first)
 
@@ -499,3 +530,54 @@ class TestDecideApproval(TestCase):
 
         with self.assertRaises(ApprovalNotPending):
             self.decide(self.first)
+
+
+class TestFailStaleTurn(TestCase):
+    conversation: Conversation
+    turn: Turn
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.conversation = ConversationFactory.create(pending_approvals=PENDING_JSON)
+        cls.turn = TurnFactory.create(conversation=cls.conversation)
+
+    def fail_stale(self):
+        TurnCommandRepository().fail_stale_turn(
+            command=FailStaleTurnCommandDTO(
+                turn_id=self.turn.id,
+                stale_seconds=STALE_SECONDS,
+                error_code="worker_lost",
+            ),
+        )
+        self.turn.refresh_from_db()
+        self.conversation.refresh_from_db()
+
+    @parametrize("status", [(Turn.Status.QUEUED,), (Turn.Status.RUNNING,)])
+    def test_fails_a_stale_turn_and_clears_the_pending_approvals(self, status):
+        Turn.objects.filter(id=self.turn.id).update(status=status)
+        age_status(self.turn, seconds=STALE_SECONDS + 1)
+
+        self.fail_stale()
+
+        assert self.turn.status == Turn.Status.FAILED
+        assert self.turn.error_code == "worker_lost"
+        assert self.turn.finished_at is not None
+        assert self.conversation.pending_approvals is None
+
+    def test_keeps_a_recent_turn(self):
+        age_status(self.turn, seconds=STALE_SECONDS - 60)
+
+        self.fail_stale()
+
+        assert self.turn.status == Turn.Status.QUEUED
+        assert self.conversation.pending_approvals == PENDING_JSON
+
+    def test_keeps_a_turn_that_waits_for_a_decision(self):
+        Turn.objects.filter(id=self.turn.id).update(
+            status=Turn.Status.WAITING_APPROVAL,
+        )
+        age_status(self.turn, seconds=STALE_SECONDS + 1)
+
+        self.fail_stale()
+
+        assert self.turn.status == Turn.Status.WAITING_APPROVAL

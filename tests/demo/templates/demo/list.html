@@ -1,0 +1,16 @@
+{% extends "demo/base.html" %}
+{% block content %}
+  <h1>Conversations</h1>
+  <form method="post" action="{% url 'demo:new' %}">
+    {% csrf_token %}
+    <button type="submit">New conversation</button>
+  </form>
+  <ul>
+    {% for conversation in conversations %}
+      <li>
+        <a href="{% url 'demo:chat' conversation.conversation_id %}">{{ conversation.title|default:"New conversation" }}</a>
+        {% if conversation.active_turn_status %}({{ conversation.active_turn_status }}){% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

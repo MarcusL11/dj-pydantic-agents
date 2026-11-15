@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from dj_pydantic_agents.ids import ID_LENGTH
 from dj_pydantic_agents.ids import new_approval_id
@@ -71,6 +72,13 @@ class Conversation(models.Model):
     class Meta:
         verbose_name = "conversation"
         verbose_name_plural = "conversations"
+        indexes = [
+            # The conversation list: one owner and one agent, newest first.
+            models.Index(
+                fields=["owner", "agent_name", "-updated_at"],
+                name="conversation_owner_agent_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.title or str(self.id)
@@ -185,6 +193,11 @@ class Turn(models.Model):
         help_text="Time the turn was done or failed. Null until then.",
         null=True,
         blank=True,
+    )
+    status_changed_at = models.DateTimeField(
+        verbose_name="status changed at",
+        help_text="Time of the latest status change. The stale turn check reads it.",
+        default=timezone.now,
     )
 
     class Meta:

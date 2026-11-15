@@ -11,6 +11,7 @@ from pydantic_ai.messages import UserPromptPart
 
 from dj_pydantic_agents.kit.transcript import NON_TEXT_PROMPT
 from dj_pydantic_agents.kit.transcript import TranscriptLineDTO
+from dj_pydantic_agents.kit.transcript import last_reply_text
 from dj_pydantic_agents.kit.transcript import transcript_lines
 from tests.testcases import SimpleTestCase
 
@@ -71,4 +72,26 @@ class TestTranscriptLines(SimpleTestCase):
         assert transcript_lines(messages) == (
             TranscriptLineDTO(kind="user", text="Look"),
             TranscriptLineDTO(kind="user", text=NON_TEXT_PROMPT),
+        )
+
+
+class TestLastReplyText(SimpleTestCase):
+    def test_joins_the_text_parts_of_the_last_response(self):
+        messages: list[ModelMessage] = [
+            ModelResponse(parts=[TextPart(content="Old")]),
+            ModelRequest(parts=[UserPromptPart(content="Hi")]),
+            ModelResponse(
+                parts=[
+                    TextPart(content="Hello"),
+                    ToolCallPart(tool_name="send_mail", args={}),
+                    TextPart(content=" there"),
+                ],
+            ),
+        ]
+
+        assert last_reply_text(messages) == "Hello there"
+
+    def test_no_response_gives_no_text(self):
+        assert (
+            last_reply_text([ModelRequest(parts=[UserPromptPart(content="Hi")])]) == ""
         )

@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING
 from typing import Literal
 
+from pydantic_ai.messages import ModelResponse
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.messages import ToolReturnPart
@@ -34,6 +35,23 @@ def transcript_lines(messages: Sequence[ModelMessage]) -> tuple[TranscriptLineDT
         for message in messages
         for part in message.parts
         if (line := _line(part)) is not None
+    )
+
+
+def last_reply_text(messages: Sequence[ModelMessage]) -> str:
+    """The text of the last model response. Empty if it has no text."""
+    response = next(
+        (
+            message
+            for message in reversed(messages)
+            if isinstance(message, ModelResponse)
+        ),
+        None,
+    )
+    if response is None:
+        return ""
+    return "".join(
+        part.content for part in response.parts if isinstance(part, TextPart)
     )
 
 

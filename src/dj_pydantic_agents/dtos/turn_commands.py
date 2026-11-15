@@ -100,6 +100,12 @@ class FailTurnCommandDTO(InternalDTO):
     error_code: str = Field(min_length=1, max_length=50)
 
 
+class FailStaleTurnCommandDTO(InternalDTO):
+    turn_id: str
+    stale_seconds: int = Field(gt=0)
+    error_code: str = Field(min_length=1, max_length=50)
+
+
 class DecideApprovalCommandDTO(InternalDTO):
     approval_id: str
     user_id: UserId
@@ -111,6 +117,7 @@ class ApprovalDecidedResultDTO(InternalDTO):
 
     approval_id: str
     turn_id: str
+    conversation_id: str
     requeued: bool
 
 

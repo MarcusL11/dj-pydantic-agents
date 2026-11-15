@@ -17,6 +17,17 @@ class ApprovalNotPending(DjPydanticAgentsError):  # noqa: N818
     """The approval does not exist, has a decision, or another user owns it."""
 
 
+class TurnNotQueued(DjPydanticAgentsError):  # noqa: N818
+    """The task runner did not take the turn, so the turn failed with error_code."""
+
+    error_code = "enqueue_failed"
+
+    def __init__(self, message: str, *, turn_id: str, conversation_id: str) -> None:
+        super().__init__(message)
+        self.turn_id = turn_id
+        self.conversation_id = conversation_id
+
+
 class TurnStateConflict(DjPydanticAgentsError):  # noqa: N818
     """The turn is not in the state that this step needs."""
 

@@ -12,6 +12,7 @@ from dj_pydantic_agents.contrib.celery.tasks import TASK_NAME
 from dj_pydantic_agents.contrib.celery.tasks import run_turn_task
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
+from dj_pydantic_agents.errors import TurnNotQueued
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
 from dj_pydantic_agents.models import Turn
 from tests.factories import UserFactory
@@ -99,10 +100,11 @@ class TestCeleryTurnFlow(TransactionTestCase):
 
         with (
             mock.patch.object(run_turn_task, "apply_async", side_effect=error),
-            self.assertRaises(OperationalError),
+            self.assertRaises(TurnNotQueued) as raised,
         ):
             self.start_turn()
 
+        assert raised.exception.__cause__ is error
         turn = Turn.objects.get(conversation_id=self.conversation.conversation_id)
         assert turn.status == Turn.Status.FAILED
         assert turn.error_code == "enqueue_failed"

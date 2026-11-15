@@ -19,6 +19,7 @@ from dj_pydantic_agents.kit.history import messages_from_json
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.history import pending_from_json
 from dj_pydantic_agents.kit.history import pending_to_json
+from dj_pydantic_agents.kit.text_combiner import TextCombiner
 from dj_pydantic_agents.signals import send_hook
 from dj_pydantic_agents.signals import turn_finished
 
@@ -117,16 +118,21 @@ class TurnRunService:
             role=spec.model_role,
             user_id=run_input.user_id,
         )
-        return self._runner.run(
-            spec=spec,
-            model=model,
-            history=messages_from_json(list(run_input.history)),
-            prompt=run_input.prompt,
-            pending=pending_from_json(run_input.pending),
-            decisions=run_input.decisions,
-            deps=deps,
-            on_event=partial(self._publish, run_input.turn_id),
-        )
+        combiner = TextCombiner(partial(self._publish, run_input.turn_id))
+        try:
+            return self._runner.run(
+                spec=spec,
+                model=model,
+                history=messages_from_json(list(run_input.history)),
+                prompt=run_input.prompt,
+                pending=pending_from_json(run_input.pending),
+                decisions=run_input.decisions,
+                deps=deps,
+                on_event=combiner,
+            )
+        finally:
+            # The waiting text goes before the final event, also after an error.
+            combiner.flush()
 
     def _fail(self, *, run_input: TurnRunInputDTO, error: Exception) -> None:
         error_code = (

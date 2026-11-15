@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>dj-pydantic-agents demo</title>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; }
+      .djpa-line, .djpa-reply, .djpa-approval { padding: .5rem .75rem; margin: .5rem 0; border-radius: .5rem; }
+      .djpa-line--user { background: #e8f0fe; }
+      .djpa-line--assistant, .djpa-reply { background: #f1f3f4; }
+      .djpa-reply { border-left: 4px solid #1a73e8; }
+      .djpa-line--tool-call, .djpa-line--tool-result { background: #fef7e0; font-size: .875rem; }
+      .djpa-line--error { background: #fce8e6; }
+      .djpa-approval { border: 1px solid #f9ab00; }
+      .djpa-message-form { display: flex; gap: .5rem; }
+      .djpa-message-form__input { flex: 1; min-height: 3rem; }
+    </style>
+  </head>
+  <body>
+    {% block content %}{% endblock %}
+  </body>
+</html>

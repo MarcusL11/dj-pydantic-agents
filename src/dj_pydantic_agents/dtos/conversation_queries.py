@@ -1,5 +1,6 @@
-"""The query and the projection of the conversation page."""
+"""The queries and the projections of the conversation pages."""
 
+from datetime import datetime  # noqa: TC003
 from typing import Literal
 
 from dj_pydantic_agents.dtos.turn_commands import UserId  # noqa: TC001
@@ -45,6 +46,11 @@ class GetConversationAgentQueryDTO(InternalDTO):
     user_id: UserId
 
 
+class GetTurnAgentQueryDTO(InternalDTO):
+    turn_id: str
+    user_id: UserId
+
+
 class GetApprovalAgentQueryDTO(InternalDTO):
     approval_id: str
     user_id: UserId
@@ -52,3 +58,17 @@ class GetApprovalAgentQueryDTO(InternalDTO):
 
 class AgentNameProjectionDTO(InternalDTO):
     agent_name: str
+
+
+class ListConversationsQueryDTO(InternalDTO):
+    user_id: UserId
+    agent_name: str
+
+
+class ConversationSummaryProjectionDTO(InternalDTO):
+    """One line of a conversation list. The title is empty before the first message."""
+
+    conversation_id: str
+    title: str
+    updated_at: datetime
+    active_turn_status: ActiveTurnStatus | None

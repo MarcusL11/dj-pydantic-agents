@@ -1,6 +1,7 @@
 from unittest.mock import create_autospec
 
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
+from dj_pydantic_agents.dtos.conversation_queries import ListConversationsQueryDTO
 from dj_pydantic_agents.errors import AgentAccessDenied
 from dj_pydantic_agents.permissions import StaffPermission
 from dj_pydantic_agents.repositories.conversation_query_repository import (
@@ -15,6 +16,7 @@ from tests.builders import a_page
 from tests.testcases import SimpleTestCase
 
 QUERY = GetConversationPageQueryDTO(conversation_id=CONVERSATION_ID, user_id=USER_ID)
+LIST_QUERY = ListConversationsQueryDTO(user_id=USER_ID, agent_name="assistant")
 
 
 class TestConversationQueryService(SimpleTestCase):
@@ -41,3 +43,21 @@ class TestConversationQueryService(SimpleTestCase):
 
         with self.assertRaises(AgentAccessDenied):
             self.service.get_conversation_page(query=QUERY)
+
+    def test_lists_the_conversations_of_an_allowed_user(self):
+        self.permission.can_use.return_value = True
+        self.repository.list_conversations.return_value = ()
+
+        assert self.service.list_conversations(query=LIST_QUERY) == ()
+        self.permission.can_use.assert_called_once_with(
+            user_id=USER_ID,
+            agent_name="assistant",
+        )
+        self.repository.list_conversations.assert_called_once_with(query=LIST_QUERY)
+
+    def test_a_user_without_access_cannot_list_the_conversations(self):
+        self.permission.can_use.return_value = False
+
+        with self.assertRaises(AgentAccessDenied):
+            self.service.list_conversations(query=LIST_QUERY)
+        self.repository.list_conversations.assert_not_called()

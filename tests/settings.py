@@ -16,7 +16,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "dj_pydantic_agents",
     "dj_pydantic_agents.contrib.celery",
+    "dj_pydantic_agents.contrib.datastar",
 ]
+
+ROOT_URLCONF = "tests.urls"
 
 # The admin system checks need these settings.
 MIDDLEWARE = [

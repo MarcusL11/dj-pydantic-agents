@@ -351,6 +351,15 @@ wheels = [
 ]
 
 [[package]]
+name = "datastar-py"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/85/8d1f9caacc6d6e60040deced44cb538ccdb2e105e77305108b68e7c2afc9/datastar_py-1.0.3.tar.gz", hash = "sha256:f25634140803da069f765f02de95e2be6ea6bf9ddd1c8955d8eee93c9aecc537", size = 32418, upload-time = "2026-09-27T03:35:04.176Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/ce/3dc775e6cef186eb4172f81ad56de05c292c94477d089a8718cc007b9599/datastar_py-1.0.3-py3-none-any.whl", hash = "sha256:38ce441fcd866249662e610d315857bde046e74c3b989a6993e31da88a0a5139", size = 22194, upload-time = "2026-09-27T03:35:03.29Z" },
+]
+
+[[package]]
 name = "dj-pydantic-agents"
 version = "0.1.0"
 source = { editable = "." }
@@ -369,6 +378,9 @@ dependencies = [
 celery = [
     { name = "celery" },
 ]
+datastar = [
+    { name = "datastar-py" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -386,6 +398,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "celery", marker = "extra == 'celery'", specifier = ">=5.6.3" },
+    { name = "datastar-py", marker = "extra == 'datastar'", specifier = ">=1.0.2" },
     { name = "django", specifier = ">=6.0" },
     { name = "markdown", specifier = ">=3.10.2" },
     { name = "nh3", specifier = ">=0.3.7" },
@@ -395,7 +408,7 @@ requires-dist = [
     { name = "python-ulid", specifier = ">=4.1" },
     { name = "redis", specifier = ">=8.0" },
 ]
-provides-extras = ["celery"]
+provides-extras = ["celery", "datastar"]
 
 [package.metadata.requires-dev]
 dev = [

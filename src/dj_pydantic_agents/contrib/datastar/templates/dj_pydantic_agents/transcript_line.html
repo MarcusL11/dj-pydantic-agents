@@ -1,0 +1,22 @@
+{% load i18n djpa %}
+{% comment %}
+One line of the transcript. The context: kind (user, assistant, tool_call,
+tool_result or error), text and tool_name.
+{% endcomment %}
+{% if kind == "user" %}
+  <div class="djpa-line djpa-line--user">{{ text|linebreaksbr }}</div>
+{% elif kind == "assistant" %}
+  <div class="djpa-line djpa-line--assistant">{{ text|djpa_reply_html }}</div>
+{% elif kind == "tool_call" %}
+  <div class="djpa-line djpa-line--tool-call">
+    <span class="djpa-line__tool">{{ tool_name }}</span>
+    <pre class="djpa-line__data">{{ text }}</pre>
+  </div>
+{% elif kind == "tool_result" %}
+  <div class="djpa-line djpa-line--tool-result">
+    <span class="djpa-line__tool">{{ tool_name }}</span>
+    <pre class="djpa-line__data">{{ text }}</pre>
+  </div>
+{% elif kind == "error" %}
+  <div class="djpa-line djpa-line--error">{{ text }}</div>
+{% endif %}
