@@ -23,6 +23,7 @@ from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
 from tests.contrib.datastar.sse import Patch
 from tests.contrib.datastar.sse import read_patches
+from tests.contrib.datastar.transports import PAUSE
 from tests.contrib.datastar.transports import ScriptedTransport
 from tests.factories import ConversationFactory
 from tests.factories import TurnFactory
@@ -32,6 +33,9 @@ from tests.testcases import TestCase
 SCRIPTED_TRANSPORT = "tests.contrib.datastar.transports.ScriptedTransport"
 STALE_SECONDS = 1800
 SHORT_STREAM_SECONDS = 0.05
+# Shorter than the pause of the scripted transport.
+SHORT_CATCH_UP_SECONDS = 0.01
+SHORT_STEP_SECONDS = 0.001
 SEND_MAIL = PendingApprovalDTO(
     tool_call_id="call-1",
     tool_name="send_mail",
@@ -80,6 +84,13 @@ class TestStreamTurn(TestCase):
         settings = scripted_settings()
         settings.enable()
         self.addCleanup(settings.disable)
+        for name, value in (
+            ("CATCH_UP_SECONDS", SHORT_CATCH_UP_SECONDS),
+            ("STEP_SECONDS", SHORT_STEP_SECONDS),
+        ):
+            patcher = mock.patch.object(views, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     async def stream(self, *, user=None) -> list[Patch]:
         await self.async_client.aforce_login(user or self.owner)
@@ -102,20 +113,29 @@ class TestStreamTurn(TestCase):
         assert "disabled" not in patch.elements
         assert 'data-init="el.focus()"' in patch.elements
 
-    async def test_renders_the_full_text_at_each_text_event(self):
+    def text_id(self) -> str:
+        return f"djpa-reply-{self.turn.id}-text"
+
+    async def test_a_live_text_patches_only_the_block_that_changed(self):
         ScriptedTransport.script = [
+            PAUSE,
             TextDeltaEventDTO(text="Hello"),
             ToolCallEventDTO(tool_call_id="call-1", tool_name="send_mail"),
+            PAUSE,
             TextDeltaEventDTO(text=" **Ada**"),
             TurnDoneEventDTO(text="Hello **Ada**"),
         ]
 
         first, second, form, end = await self.stream()
 
-        text_selector = f"#djpa-reply-{self.turn.id}-text"
-        assert (first.selector, first.mode) == (text_selector, "inner")
-        assert first.elements == "<p>Hello</p>"
-        assert second.elements == "<p>Hello <strong>Ada</strong></p>"
+        # The first patch of a stream replaces the full text.
+        assert (first.selector, first.mode) == (f"#{self.text_id()}", "inner")
+        assert first.elements == f'<p id="{self.text_id()}-0">Hello</p>'
+        # A later patch morphs the block with the same ID.
+        assert (second.selector, second.mode) == ("", "outer")
+        assert second.elements == (
+            f'<p id="{self.text_id()}-0">Hello <strong>Ada</strong></p>'
+        )
         # The form comes before the end of the run. The removal of the reply
         # stops the stream in the browser, so no event can come after it.
         self.assert_open_form(form)
@@ -125,13 +145,74 @@ class TestStreamTurn(TestCase):
         assert ScriptedTransport.reads == ["0"]
         assert ScriptedTransport.closed == 1
 
+    async def test_a_long_text_shows_in_even_steps_before_the_end(self):
+        words = "one two three four five six seven eight"
+        ScriptedTransport.script = [
+            PAUSE,
+            TextDeltaEventDTO(text=words),
+            TurnDoneEventDTO(text=words),
+        ]
+
+        *texts, form, end = await self.stream()
+
+        shown = [text.elements for text in texts]
+        assert len(shown) > 2  # noqa: PLR2004
+        assert shown[0] == f'<p id="{self.text_id()}-0">one two three</p>'
+        assert shown[-1] == f'<p id="{self.text_id()}-0">{words}</p>'
+        self.assert_open_form(form)
+        self.assert_run_end(end)
+
+    async def test_a_new_block_is_appended(self):
+        ScriptedTransport.script = [
+            PAUSE,
+            TextDeltaEventDTO(text="First"),
+            PAUSE,
+            TextDeltaEventDTO(text="\n\nSecond"),
+            TurnDoneEventDTO(text="First\n\nSecond"),
+        ]
+
+        _first, second, _form, _end = await self.stream()
+
+        assert (second.selector, second.mode) == (f"#{self.text_id()}", "append")
+        assert second.elements == f'<p id="{self.text_id()}-1">Second</p>'
+
+    async def test_a_new_stream_shows_the_earlier_text_in_one_patch(self):
+        ScriptedTransport.script = [
+            TextDeltaEventDTO(text="Hello"),
+            TextDeltaEventDTO(text=" **Ada**"),
+            PAUSE,
+            TurnDoneEventDTO(text="Hello **Ada**"),
+        ]
+
+        text, form, end = await self.stream()
+
+        assert text.mode == "inner"
+        assert text.elements == (
+            f'<p id="{self.text_id()}-0">Hello <strong>Ada</strong></p>'
+        )
+        self.assert_open_form(form)
+        self.assert_run_end(end)
+
+    async def test_open_markdown_shows_closed_while_it_streams(self):
+        ScriptedTransport.script = [
+            PAUSE,
+            TextDeltaEventDTO(text="Hello **Ada"),
+            TurnDoneEventDTO(text="Hello **Ada"),
+        ]
+
+        *texts, _form, _end = await self.stream()
+
+        assert texts[-1].elements == (
+            f'<p id="{self.text_id()}-0">Hello <strong>Ada</strong></p>'
+        )
+
     async def test_a_failed_run_shows_the_error_and_an_open_form(self):
         ScriptedTransport.script = [
             TextDeltaEventDTO(text="Hel"),
             TurnFailedEventDTO(error_code="model_api_error"),
         ]
 
-        _text, form, end = await self.stream()
+        form, end = await self.stream()
 
         self.assert_run_end(end)
         assert "djpa-line--error" in end.elements
@@ -159,13 +240,14 @@ class TestStreamTurn(TestCase):
             TextDeltaEventDTO(text="Old"),
             ApprovalRequestedEventDTO(approvals=(SEND_MAIL,)),
             TextDeltaEventDTO(text="New"),
+            PAUSE,
             ApprovalRequestedEventDTO(approvals=(NEW_CALL,)),
         ]
 
-        old, new, reconnect = await self.stream()
+        new, reconnect = await self.stream()
 
-        assert old.elements == "<p>Old</p>"
-        assert new.elements == "<p>New</p>"
+        assert new.mode == "inner"
+        assert new.elements == f'<p id="{self.text_id()}-0">New</p>'
         assert reconnect.kind == "datastar-patch-signals"
         assert ScriptedTransport.reads == ["0", "2"]
         assert ScriptedTransport.closed == 2  # noqa: PLR2004
@@ -184,7 +266,7 @@ class TestStreamTurn(TestCase):
         with mock.patch.object(views, "STREAM_SECONDS", SHORT_STREAM_SECONDS):
             text, reconnect = await self.stream()
 
-        assert text.elements == "<p>Hi</p>"
+        assert text.elements == f'<p id="{self.text_id()}-0">Hi</p>'
         assert reconnect.kind == "datastar-patch-signals"
         assert ScriptedTransport.closed == 1
 
