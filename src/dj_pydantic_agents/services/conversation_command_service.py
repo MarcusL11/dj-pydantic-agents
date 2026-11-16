@@ -1,4 +1,4 @@
-"""Create conversations, send messages and decide approvals."""
+"""Create, rename and delete conversations, send messages and decide approvals."""
 
 # create_autospec() reads the annotations of each method, so the annotation
 # types load at runtime.
@@ -13,8 +13,10 @@ from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import RenameConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import UserId
@@ -69,16 +71,27 @@ class ConversationCommandService:
         self._check_access(user_id=command.owner_id, agent_name=command.agent_name)
         return self._repository.create_conversation(command=command)
 
+    def rename_conversation(self, *, command: RenameConversationCommandDTO) -> None:
+        self._check_conversation_access(
+            conversation_id=command.conversation_id,
+            user_id=command.user_id,
+        )
+        self._repository.rename_conversation(command=command)
+
+    def delete_conversation(self, *, command: DeleteConversationCommandDTO) -> None:
+        """Delete an idle conversation. An active turn raises TurnInProgress."""
+        self._check_conversation_access(
+            conversation_id=command.conversation_id,
+            user_id=command.user_id,
+        )
+        self._repository.delete_conversation(command=command)
+
     def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:
         """Queue the message as a new turn, then give the turn to the task runner."""
-        # A conversation never changes its agent, so this read can come first.
-        agent = self._queries.get_conversation_agent(
-            query=GetConversationAgentQueryDTO(
-                conversation_id=command.conversation_id,
-                user_id=command.user_id,
-            ),
+        self._check_conversation_access(
+            conversation_id=command.conversation_id,
+            user_id=command.user_id,
         )
-        self._check_access(user_id=command.user_id, agent_name=agent.agent_name)
         result = self._repository.start_turn(command=command)
         self._enqueue(turn_id=result.turn_id, conversation_id=result.conversation_id)
         return result
@@ -144,6 +157,23 @@ class ConversationCommandService:
                 user_id=command.user_id,
             ),
         )
+
+    def _check_conversation_access(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+    ) -> None:
+        """Raise ConversationNotFound or the errors of _check_access()."""
+        # A conversation never changes its agent, so this read can come before
+        # the write.
+        agent = self._queries.get_conversation_agent(
+            query=GetConversationAgentQueryDTO(
+                conversation_id=conversation_id,
+                user_id=user_id,
+            ),
+        )
+        self._check_access(user_id=user_id, agent_name=agent.agent_name)
 
     def _check_access(self, *, user_id: UserId, agent_name: str) -> None:
         if agent_name not in self._specs:

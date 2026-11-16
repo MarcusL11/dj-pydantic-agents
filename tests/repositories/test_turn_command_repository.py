@@ -15,8 +15,10 @@ from unittest_parametrize import parametrize
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import RenameConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnUsageDTO
@@ -94,6 +96,116 @@ class TestCreateConversation(TestCase):
         assert conversation.title == ""
         assert conversation.messages == []
         assert conversation.pending_approvals is None
+
+
+class TestRenameConversation(TestCase):
+    owner: User
+    conversation: Conversation
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = UserFactory.create()
+        cls.conversation = ConversationFactory.create(owner=cls.owner, title="Old")
+
+    def rename(self, *, title: str = "New title", user_id: int | None = None):
+        TurnCommandRepository().rename_conversation(
+            command=RenameConversationCommandDTO(
+                conversation_id=self.conversation.id,
+                user_id=self.owner.pk if user_id is None else user_id,
+                title=title,
+            ),
+        )
+
+    def test_sets_the_title_and_keeps_the_place_in_the_list(self):
+        updated_at = self.conversation.updated_at
+
+        self.rename(title="  Blue dial watches  ")
+
+        self.conversation.refresh_from_db()
+        assert self.conversation.title == "Blue dial watches"
+        assert self.conversation.updated_at == updated_at
+
+    def test_renames_during_an_active_turn(self):
+        TurnFactory.create(conversation=self.conversation, requested_by=self.owner)
+
+        self.rename()
+
+        self.conversation.refresh_from_db()
+        assert self.conversation.title == "New title"
+
+    def test_another_user_gets_not_found_and_nothing_changes(self):
+        other = UserFactory.create()
+
+        with self.assertRaises(ConversationNotFound):
+            self.rename(user_id=other.pk)
+
+        self.conversation.refresh_from_db()
+        assert self.conversation.title == "Old"
+
+
+class TestDeleteConversation(TestCase):
+    owner: User
+    conversation: Conversation
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = UserFactory.create()
+        cls.conversation = ConversationFactory.create(owner=cls.owner)
+
+    def delete(self, *, user_id: int | None = None):
+        TurnCommandRepository().delete_conversation(
+            command=DeleteConversationCommandDTO(
+                conversation_id=self.conversation.id,
+                user_id=self.owner.pk if user_id is None else user_id,
+            ),
+        )
+
+    def test_deletes_the_conversation_its_turns_and_its_approvals(self):
+        turn = TurnFactory.create(
+            conversation=self.conversation,
+            requested_by=self.owner,
+            status=Turn.Status.DONE,
+        )
+        PendingApprovalFactory.create(
+            turn=turn,
+            decision=PendingApproval.Decision.APPROVED,
+        )
+        kept = ConversationFactory.create(owner=self.owner)
+
+        self.delete()
+
+        assert list(Conversation.objects.values_list("id", flat=True)) == [kept.id]
+        assert not Turn.objects.exists()
+        assert not PendingApproval.objects.exists()
+
+    @parametrize(
+        "status",
+        [
+            (Turn.Status.QUEUED,),
+            (Turn.Status.RUNNING,),
+            (Turn.Status.WAITING_APPROVAL,),
+        ],
+    )
+    def test_an_active_turn_stops_the_delete(self, status: str):
+        TurnFactory.create(
+            conversation=self.conversation,
+            requested_by=self.owner,
+            status=status,
+        )
+
+        with self.assertRaises(TurnInProgress):
+            self.delete()
+
+        assert Conversation.objects.filter(id=self.conversation.id).exists()
+        assert Turn.objects.filter(conversation=self.conversation).exists()
+
+    def test_another_user_gets_not_found_and_nothing_changes(self):
+        other = UserFactory.create()
+
+        with self.assertRaises(ConversationNotFound):
+            self.delete(user_id=other.pk)
+
+        assert Conversation.objects.filter(id=self.conversation.id).exists()
 
 
 class TestStartTurn(TestCase):

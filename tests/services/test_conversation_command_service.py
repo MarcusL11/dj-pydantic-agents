@@ -1,13 +1,17 @@
 from unittest.mock import create_autospec
 
+from pydantic import ValidationError
+
 from dj_pydantic_agents.dtos.conversation_queries import GetApprovalAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetTurnAgentQueryDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import RenameConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_events import ApprovalDecidedEventDTO
 from dj_pydantic_agents.dtos.turn_streams import GetTurnSnapshotQueryDTO
@@ -43,6 +47,15 @@ START_COMMAND = StartTurnCommandDTO(
     conversation_id=CONVERSATION_ID,
     user_id=USER_ID,
     prompt="Hi",
+)
+RENAME_COMMAND = RenameConversationCommandDTO(
+    conversation_id=CONVERSATION_ID,
+    user_id=USER_ID,
+    title="Blue dials",
+)
+DELETE_COMMAND = DeleteConversationCommandDTO(
+    conversation_id=CONVERSATION_ID,
+    user_id=USER_ID,
 )
 STREAM_COMMAND = OpenTurnStreamCommandDTO(turn_id=TURN_ID, user_id=USER_ID)
 STALE_TURN_SECONDS = 1800
@@ -100,6 +113,64 @@ class TestConversationCommandService(SimpleTestCase):
             self.service.create_conversation(command=command)
 
         self.repository.create_conversation.assert_not_called()
+
+    def test_renames_after_the_access_check(self):
+        self.service.rename_conversation(command=RENAME_COMMAND)
+
+        self.queries.get_conversation_agent.assert_called_once_with(
+            query=GetConversationAgentQueryDTO(
+                conversation_id=CONVERSATION_ID,
+                user_id=USER_ID,
+            ),
+        )
+        self.repository.rename_conversation.assert_called_once_with(
+            command=RENAME_COMMAND,
+        )
+
+    def test_a_blank_title_is_refused(self):
+        with self.assertRaises(ValidationError):
+            RenameConversationCommandDTO(
+                conversation_id=CONVERSATION_ID,
+                user_id=USER_ID,
+                title="   ",
+            )
+
+    def test_a_denied_user_renames_nothing(self):
+        self.permission.can_use.return_value = False
+
+        with self.assertRaises(AgentAccessDenied):
+            self.service.rename_conversation(command=RENAME_COMMAND)
+
+        self.repository.rename_conversation.assert_not_called()
+
+    def test_deletes_after_the_access_check(self):
+        self.service.delete_conversation(command=DELETE_COMMAND)
+
+        self.queries.get_conversation_agent.assert_called_once_with(
+            query=GetConversationAgentQueryDTO(
+                conversation_id=CONVERSATION_ID,
+                user_id=USER_ID,
+            ),
+        )
+        self.repository.delete_conversation.assert_called_once_with(
+            command=DELETE_COMMAND,
+        )
+
+    def test_a_missing_conversation_deletes_nothing(self):
+        self.queries.get_conversation_agent.side_effect = ConversationNotFound()
+
+        with self.assertRaises(ConversationNotFound):
+            self.service.delete_conversation(command=DELETE_COMMAND)
+
+        self.repository.delete_conversation.assert_not_called()
+
+    def test_a_denied_user_deletes_nothing(self):
+        self.permission.can_use.return_value = False
+
+        with self.assertRaises(AgentAccessDenied):
+            self.service.delete_conversation(command=DELETE_COMMAND)
+
+        self.repository.delete_conversation.assert_not_called()
 
     def test_start_turn_queues_the_turn_after_the_write(self):
         self.repository.start_turn.return_value = a_started_result()
