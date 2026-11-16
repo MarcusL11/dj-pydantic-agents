@@ -4,14 +4,25 @@ Agent turns, streaming and approvals for Django. Not the same package as [`djang
 
 ## Status
 
-Version 0.1 is in development. Do not use it in production.
+Version 0.1 is complete. Vintage Eye is the first project that uses it. It has no production use yet.
 
 ## Needs
 
 - Python 3.14 or later
 - Django 6.0 or later
 - PostgreSQL
+- Redis, for the Redis Stream transport
 - `pydantic-ai-slim==2.68.*` and `pydantic-ai-harness==0.68.*`
+
+## Install
+
+The repository is private. Each project pins one Git tag. Select the extras that the project uses: `celery`, `codex` and `datastar`.
+
+```bash
+uv add "dj-pydantic-agents[celery,codex,datastar] @ git+ssh://git@github.com/MarcusL11/dj-pydantic-agents.git@v0.1.0"
+```
+
+A Docker build needs read access to the repository, for example an SSH mount or a deploy key.
 
 ## Celery
 
