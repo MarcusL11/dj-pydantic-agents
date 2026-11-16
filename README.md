@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.2.0"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.2.1"
 ```
 
 ## Celery

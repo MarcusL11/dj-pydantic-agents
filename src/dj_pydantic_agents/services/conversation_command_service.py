@@ -1,41 +1,41 @@
 """Create conversations, send messages and decide approvals."""
 
-from typing import TYPE_CHECKING
+# create_autospec() reads the annotations of each method, so the annotation
+# types load at runtime.
+# ruff: noqa: TC001, TC003
+
+from collections.abc import Mapping
 
 from dj_pydantic_agents.dtos.conversation_queries import GetApprovalAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetTurnAgentQueryDTO
+from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
+from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
+from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
+from dj_pydantic_agents.dtos.turn_commands import UserId
 from dj_pydantic_agents.dtos.turn_events import ApprovalDecidedEventDTO
 from dj_pydantic_agents.dtos.turn_streams import GetTurnSnapshotQueryDTO
+from dj_pydantic_agents.dtos.turn_streams import OpenTurnStreamCommandDTO
+from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
 from dj_pydantic_agents.errors import AgentAccessDenied
 from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import TurnNotQueued
+from dj_pydantic_agents.extensions import AgentPermission
+from dj_pydantic_agents.extensions import TaskRunner
+from dj_pydantic_agents.kit.specs import AgentSpec
+from dj_pydantic_agents.repositories.conversation_query_repository import (
+    ConversationQueryRepository,
+)
+from dj_pydantic_agents.repositories.turn_command_repository import (
+    TurnCommandRepository,
+)
 from dj_pydantic_agents.signals import approval_decided
 from dj_pydantic_agents.signals import send_hook
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
-    from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
-    from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
-    from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
-    from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
-    from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
-    from dj_pydantic_agents.dtos.turn_commands import UserId
-    from dj_pydantic_agents.dtos.turn_streams import OpenTurnStreamCommandDTO
-    from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
-    from dj_pydantic_agents.extensions import AgentPermission
-    from dj_pydantic_agents.extensions import TaskRunner
-    from dj_pydantic_agents.kit.specs import AgentSpec
-    from dj_pydantic_agents.repositories.conversation_query_repository import (
-        ConversationQueryRepository,
-    )
-    from dj_pydantic_agents.repositories.turn_command_repository import (
-        TurnCommandRepository,
-    )
 
 # The error code of a turn that the task runner did not take.
 ENQUEUE_FAILED = TurnNotQueued.error_code

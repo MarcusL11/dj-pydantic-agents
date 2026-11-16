@@ -16,7 +16,7 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 - The package has its own composition root in `composition.py`. `contrib.codex` has its own `composition.py`, because the core app does not import `cryptography`. Do not register code in `AppConfig.ready()`.
   - One exception: `ready()` imports `checks.py`, because Django registers a system check when its module loads. The core app and `contrib.codex` do this.
 - The public API is the `build_*` functions of the two `composition.py` modules, the DTOs, the errors, the settings and the signals. It also holds the views, the URLs and the templates of `contrib.datastar`, and the model factory of `contrib.codex`. The service and repository classes are private.
-- `create_autospec()` reads the annotations of the class that it copies. So a class that a test autospecs imports its annotation types at runtime, with `# noqa: TC001`.
+- `create_autospec()` reads the annotations of the class that it copies. So a class that a test autospecs imports its annotation types at runtime, with `# noqa: TC001`. Projects autospec each service that a `build_*` function returns. `tests/test_composition.py` checks this.
 
 ## Versions
 

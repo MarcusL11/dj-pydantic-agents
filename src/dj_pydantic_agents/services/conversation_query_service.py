@@ -1,23 +1,21 @@
 """Read the conversation pages."""
 
-from typing import TYPE_CHECKING
+# create_autospec() reads the annotations of each method, so the annotation
+# types load at runtime.
+# ruff: noqa: TC001
 
+from dj_pydantic_agents.dtos.conversation_queries import ConversationPageProjectionDTO
+from dj_pydantic_agents.dtos.conversation_queries import (
+    ConversationSummaryProjectionDTO,
+)
+from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
+from dj_pydantic_agents.dtos.conversation_queries import ListConversationsQueryDTO
+from dj_pydantic_agents.dtos.turn_commands import UserId
 from dj_pydantic_agents.errors import AgentAccessDenied
-
-if TYPE_CHECKING:
-    from dj_pydantic_agents.dtos.conversation_queries import (
-        ConversationPageProjectionDTO,
-    )
-    from dj_pydantic_agents.dtos.conversation_queries import (
-        ConversationSummaryProjectionDTO,
-    )
-    from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
-    from dj_pydantic_agents.dtos.conversation_queries import ListConversationsQueryDTO
-    from dj_pydantic_agents.dtos.turn_commands import UserId
-    from dj_pydantic_agents.extensions import AgentPermission
-    from dj_pydantic_agents.repositories.conversation_query_repository import (
-        ConversationQueryRepository,
-    )
+from dj_pydantic_agents.extensions import AgentPermission
+from dj_pydantic_agents.repositories.conversation_query_repository import (
+    ConversationQueryRepository,
+)
 
 
 class ConversationQueryService:

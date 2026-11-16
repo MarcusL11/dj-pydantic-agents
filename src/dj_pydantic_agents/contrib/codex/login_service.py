@@ -5,8 +5,11 @@ That page does not load on a server, so the user copies its address and
 pastes it into a form of the project.
 """
 
+# create_autospec() reads the annotations of each method, so the annotation
+# types load at runtime.
+# ruff: noqa: TC001
+
 from datetime import timedelta
-from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
 from urllib.parse import urlsplit
 
@@ -16,19 +19,17 @@ from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from pydantic_ai.providers.openai_codex import OpenAICodexOAuthFlow
 
 from dj_pydantic_agents.contrib.codex.crypto import encrypt_tokens
+from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.dtos import CreatePlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.dtos import GetPlanLoginQueryDTO
+from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
 from dj_pydantic_agents.contrib.codex.dtos import PlanConnectedResultDTO
 from dj_pydantic_agents.contrib.codex.dtos import PlanLoginStartedResultDTO
+from dj_pydantic_agents.contrib.codex.dtos import PlanStatusProjectionDTO
 from dj_pydantic_agents.contrib.codex.dtos import SavePlanCredentialCommandDTO
+from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
-
-if TYPE_CHECKING:
-    from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
-    from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
-    from dj_pydantic_agents.contrib.codex.dtos import PlanStatusProjectionDTO
-    from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
-    from dj_pydantic_agents.contrib.codex.login_repository import PlanLoginRepository
+from dj_pydantic_agents.contrib.codex.login_repository import PlanLoginRepository
 
 # A login must complete in this time.
 LOGIN_SECONDS = 600

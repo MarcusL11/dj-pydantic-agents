@@ -1,48 +1,48 @@
 """Run one turn in a worker: claim it, run the agent, save the result."""
 
+# create_autospec() reads the annotations of each method, so the annotation
+# types load at runtime.
+# ruff: noqa: TC001, TC002, TC003
+
 import logging
+from collections.abc import Mapping
 from functools import partial
-from typing import TYPE_CHECKING
+
+from pydantic_ai.usage import RunUsage
 
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import RunTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
+from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnUsageDTO
 from dj_pydantic_agents.dtos.turn_events import TurnFinishedEventDTO
+from dj_pydantic_agents.dtos.turn_events import TurnRunStatus
 from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import DjPydanticAgentsError
+from dj_pydantic_agents.extensions import DepsFactory
+from dj_pydantic_agents.extensions import EventTransport
+from dj_pydantic_agents.extensions import ModelFactory
 from dj_pydantic_agents.kit.errors import error_code_for
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
+from dj_pydantic_agents.kit.events import TurnEventDTO
 from dj_pydantic_agents.kit.events import TurnFailedEventDTO
 from dj_pydantic_agents.kit.history import describe_pending
 from dj_pydantic_agents.kit.history import messages_from_json
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.history import pending_from_json
 from dj_pydantic_agents.kit.history import pending_to_json
+from dj_pydantic_agents.kit.runner import TurnOutcome
+from dj_pydantic_agents.kit.runner import TurnRunner
+from dj_pydantic_agents.kit.specs import AgentSpec
 from dj_pydantic_agents.kit.text_combiner import TextCombiner
+from dj_pydantic_agents.repositories.turn_command_repository import (
+    TurnCommandRepository,
+)
 from dj_pydantic_agents.signals import send_hook
 from dj_pydantic_agents.signals import turn_finished
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from pydantic_ai.usage import RunUsage
-
-    from dj_pydantic_agents.dtos.turn_commands import RunTurnCommandDTO
-    from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
-    from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
-    from dj_pydantic_agents.dtos.turn_events import TurnRunStatus
-    from dj_pydantic_agents.extensions import DepsFactory
-    from dj_pydantic_agents.extensions import EventTransport
-    from dj_pydantic_agents.extensions import ModelFactory
-    from dj_pydantic_agents.kit.events import TurnEventDTO
-    from dj_pydantic_agents.kit.runner import TurnOutcome
-    from dj_pydantic_agents.kit.runner import TurnRunner
-    from dj_pydantic_agents.kit.specs import AgentSpec
-    from dj_pydantic_agents.repositories.turn_command_repository import (
-        TurnCommandRepository,
-    )
 
 logger = logging.getLogger(__name__)
 
