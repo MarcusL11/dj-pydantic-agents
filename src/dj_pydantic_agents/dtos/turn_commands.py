@@ -1,11 +1,13 @@
 """The commands and results of conversations, turns and approvals."""
 
+from typing import Annotated
 from typing import Any
 from typing import Literal
 from typing import Self
 from uuid import UUID
 
 from pydantic import Field
+from pydantic import StringConstraints
 from pydantic import model_validator
 
 from dj_pydantic_agents.kit.dtos import InternalDTO
@@ -27,6 +29,22 @@ class CreateConversationCommandDTO(InternalDTO):
 
 class ConversationCreatedResultDTO(InternalDTO):
     conversation_id: str
+
+
+class RenameConversationCommandDTO(InternalDTO):
+    """The title loses its outer spaces. A title of only spaces is refused."""
+
+    conversation_id: str
+    user_id: UserId
+    title: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    ]
+
+
+class DeleteConversationCommandDTO(InternalDTO):
+    conversation_id: str
+    user_id: UserId
 
 
 class StartTurnCommandDTO(InternalDTO):

@@ -14,8 +14,10 @@ from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailStaleTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
+from dj_pydantic_agents.dtos.turn_commands import RenameConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
@@ -34,7 +36,7 @@ TITLE_LENGTH = 80
 
 
 class TurnCommandRepository:
-    """Start, claim, save, fail and decide turns.
+    """Change conversations. Start, claim, save, fail and decide turns.
 
     A lock on the conversation row makes the turns of one conversation run one
     at a time. The partial unique constraint on Turn is the last guard.
@@ -53,6 +55,42 @@ class TurnCommandRepository:
         )
         conversation.save(force_insert=True)
         return ConversationCreatedResultDTO(conversation_id=conversation.id)
+
+    def rename_conversation(self, *, command: RenameConversationCommandDTO) -> None:
+        """Set the title. An active turn does not stop a rename.
+
+        updated_at does not change, so the conversation keeps its place in the list.
+        """
+        renamed = Conversation.objects.filter(
+            id=command.conversation_id,
+            owner_id=command.user_id,  # type: ignore[misc]
+        ).update(title=command.title)
+        if not renamed:
+            msg = "The conversation was not found."
+            raise ConversationNotFound(msg)
+
+    @transaction.atomic
+    def delete_conversation(self, *, command: DeleteConversationCommandDTO) -> None:
+        """Delete the conversation, its turns and its approvals.
+
+        The lock on the conversation row stops a new turn during the delete,
+        as in start_turn().
+        """
+        conversation = (
+            Conversation.objects.select_for_update()  # type: ignore[misc]
+            .filter(id=command.conversation_id, owner_id=command.user_id)
+            .first()
+        )
+        if conversation is None:
+            msg = "The conversation was not found."
+            raise ConversationNotFound(msg)
+        if Turn.objects.filter(
+            conversation_id=conversation.id,
+            status__in=ACTIVE_TURN_STATUSES,
+        ).exists():
+            msg = "The conversation has an active turn."
+            raise TurnInProgress(msg)
+        conversation.delete()
 
     @transaction.atomic
     def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:

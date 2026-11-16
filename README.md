@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.2.1"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.3.0"
 ```
 
 ## Celery
@@ -112,6 +112,13 @@ def agent_chat(request, conversation_id):
 ```
 
 `list_conversations()` of the query service gives the conversations of a user with an agent, newest first.
+
+The command service also renames and deletes a conversation:
+
+- `rename_conversation(command=RenameConversationCommandDTO(...))` sets the title. The title loses its outer spaces and has 1 to 200 characters. A rename can occur during a turn. The conversation keeps its place in the list.
+- `delete_conversation(command=DeleteConversationCommandDTO(...))` deletes the conversation, its turns and its approvals. A conversation with an active turn raises `TurnInProgress`.
+
+Both raise `ConversationNotFound` when the conversation does not exist or another user owns it.
 
 The page template loads Datastar 1 and includes the chat:
 
