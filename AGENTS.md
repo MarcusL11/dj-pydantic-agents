@@ -22,7 +22,8 @@ A reusable Django package for Pydantic AI agent turns, streaming and approvals. 
 
 - Python 3.14 or later. Django 6.0 or later.
 - Pin `pydantic-ai-slim==2.68.*` and `pydantic-ai-harness==0.68.*`. They move together. A Pydantic AI upgrade is a new package release.
-- A release is a Git tag `vX.Y.Z` on `main`. The `version` in `pyproject.toml` must be the same. Projects pin a tag.
+- A release is a Git tag `vX.Y.Z` on `main`. The `version` in `pyproject.toml` must be the same. Projects pin the PyPI version.
+- A GitHub release of the tag starts `.github/workflows/publish.yml`, which uploads to PyPI. A manual run of the workflow on `main` uploads to TestPyPI. PyPI keeps each version, so never use a version number two times.
 - `[tool.uv] exclude-newer-package` exempts the Pydantic AI packages from the 7-day `exclude-newer` window. Update it with each upgrade.
 
 ## Commands

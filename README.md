@@ -16,13 +16,11 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 
 ## Install
 
-The repository is private. Each project pins one Git tag. Select the extras that the project uses: `celery`, `codex` and `datastar`.
+Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar] @ git+ssh://git@github.com/MarcusL11/dj-pydantic-agents.git@v0.1.0"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.1.1"
 ```
-
-A Docker build needs read access to the repository, for example an SSH mount or a deploy key.
 
 ## Celery
 
