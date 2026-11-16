@@ -30,6 +30,9 @@ from dj_pydantic_agents.contrib.datastar.rendering import render_run_end
 from dj_pydantic_agents.contrib.datastar.rendering import render_transcript_line
 from dj_pydantic_agents.contrib.datastar.rendering import reply_id
 from dj_pydantic_agents.contrib.datastar.rendering import reply_text_id
+from dj_pydantic_agents.contrib.datastar.streaming import TextReveal
+from dj_pydantic_agents.contrib.datastar.streaming import close_open_markdown
+from dj_pydantic_agents.contrib.datastar.streaming import number_blocks
 from dj_pydantic_agents.db import database_sync_to_async
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
@@ -66,6 +69,13 @@ if TYPE_CHECKING:
 # A stream lives this long at most. Then the page opens a new stream, and the
 # new stream reads a new snapshot.
 STREAM_SECONDS = 60
+# The time between two steps of the text. Each step is one patch. A model
+# sends a part of its text about each 150 ms. Steps of this length fill that
+# time with a few words, so the text does not stop between the parts.
+STEP_SECONDS = 0.045
+# A new stream shows the events that come in this time in one patch. These
+# are the events from before the stream, for example after a reload.
+CATCH_UP_SECONDS = 0.05
 # The signal of the page that opens a new stream when its value changes.
 STREAM_SIGNAL = "_djpaStream"
 TRANSCRIPT_SELECTOR = "#djpa-transcript"
@@ -166,8 +176,20 @@ async def stream_turn(request: HttpRequest, turn_id: str) -> HttpResponseBase:
     return DatastarResponse(stream.events())
 
 
+class _Tick:
+    """The reader of a stream yields this when the next text step is due."""
+
+
+_TICK = _Tick()
+
+
 class _TurnStream:
-    """The events of one stream. It holds no model and no database connection."""
+    """The events of one stream. It holds no model and no database connection.
+
+    A new stream first catches up: it shows the text of the earlier events in
+    one patch. After that, it shows each new text in small, even steps. Each
+    patch changes only the blocks of the reply that changed.
+    """
 
     def __init__(
         self,
@@ -181,7 +203,10 @@ class _TurnStream:
         self._csrf_token = csrf_token
         self._transport = transport
         self._sanitizer = sanitizer
-        self._text = ""
+        self._text = TextReveal()
+        # The blocks on the page. None: the next patch replaces the full text.
+        self._blocks: tuple[str, ...] | None = None
+        self._catching_up = True
         self._deadline = 0.0
 
     async def events(self) -> AsyncGenerator[DatastarEvent]:
@@ -214,35 +239,70 @@ class _TurnStream:
                 after_id=after_id,
             )
             after_id = None
+            items = self._with_ticks(reader)
             try:
-                async for streamed in self._until_deadline(reader):
-                    if streamed is None:
+                async for item in items:
+                    if isinstance(item, _Tick):
+                        for event in self._tick():
+                            yield event
+                    elif item is None:
                         yield KEEP_ALIVE
-                    elif self._is_earlier_stop(streamed.event):
-                        self._text = ""
-                        after_id = streamed.event_id
+                    elif self._is_earlier_stop(item.event):
+                        self._text.clear()
+                        self._blocks = None
+                        after_id = item.event_id
                     else:
-                        for event in self._patches_for(streamed.event):
+                        async for event in self._patches_for(item.event):
                             yield event
             finally:
+                await items.aclose()
                 await reader.aclose()
 
-    async def _until_deadline(
+    async def _with_ticks(
         self,
         reader: AsyncGenerator[StreamedTurnEventDTO | None],
-    ) -> AsyncGenerator[StreamedTurnEventDTO | None]:
-        """Yield from the reader. Raise TimeoutError at the deadline.
+    ) -> AsyncGenerator[StreamedTurnEventDTO | _Tick | None]:
+        """Yield the items of the reader, and a tick when a text step is due.
 
-        The timeout is around the read only, not around a yield. So the
-        cancel of the timeout cannot reach the code that sends the response.
+        A wait for an item does not cancel the read, so a tick cannot lose an
+        event. Raise TimeoutError at the deadline.
         """
-        while True:
-            async with asyncio.timeout_at(self._deadline):
+        loop = asyncio.get_running_loop()
+        read: asyncio.Future[StreamedTurnEventDTO | None] | None = None
+        try:
+            while True:
+                if read is None:
+                    read = asyncio.ensure_future(anext(reader))
+                timeout = self._deadline - loop.time()
+                if self._catching_up:
+                    timeout = min(timeout, CATCH_UP_SECONDS)
+                elif self._text.is_waiting:
+                    timeout = min(timeout, STEP_SECONDS)
+                done, _ = await asyncio.wait({read}, timeout=max(timeout, 0))
+                if not done:
+                    if loop.time() >= self._deadline:
+                        raise TimeoutError
+                    yield _TICK
+                    continue
+                finished, read = read, None
                 try:
-                    streamed = await anext(reader)
+                    item = finished.result()
                 except StopAsyncIteration:
                     return
-            yield streamed
+                yield item
+        finally:
+            if read is not None:
+                read.cancel()
+                await asyncio.wait({read})
+
+    def _tick(self) -> Iterator[DatastarEvent]:
+        if self._catching_up:
+            self._catching_up = False
+            if self._text.shown:
+                yield from self._text_patches()
+        elif self._text.is_waiting:
+            self._text.step()
+            yield from self._text_patches()
 
     def _is_earlier_stop(self, event: TurnEventDTO) -> bool:
         """An approval stop with only decided tool calls is of an earlier run."""
@@ -251,25 +311,69 @@ class _TurnStream:
             approval.tool_call_id in decided for approval in event.approvals
         )
 
-    def _patches_for(self, event: TurnEventDTO) -> Iterator[DatastarEvent]:
+    async def _patches_for(self, event: TurnEventDTO) -> AsyncGenerator[DatastarEvent]:
         match event:
             case TextDeltaEventDTO(text=text):
-                self._text += text
-                yield SSE.patch_elements(
-                    render_reply_text(text=self._text, sanitizer=self._sanitizer),
-                    selector=f"#{reply_text_id(self._snapshot.turn_id)}",
-                    mode=ElementPatchMode.INNER,
-                )
+                for patch in self._add_text(text):
+                    yield patch
             case TurnDoneEventDTO(text=text):
-                yield from self._run_end(reply_text=text)
+                async for patch in self._show_waiting_text():
+                    yield patch
+                for patch in self._run_end(reply_text=text):
+                    yield patch
             case TurnFailedEventDTO(error_code=error_code):
-                yield from self._run_end(error_code=error_code)
+                for patch in self._run_end(error_code=error_code):
+                    yield patch
             case ApprovalRequestedEventDTO():
                 # The event has no approval IDs for the buttons. The next
                 # stream reads them with its snapshot.
                 yield _reconnect()
             case _:
                 pass
+
+    def _add_text(self, text: str) -> Iterator[DatastarEvent]:
+        """Show the first step of a new text at once. A catch-up shows all of it."""
+        self._text.add(text)
+        if self._catching_up:
+            self._text.show_all()
+            return
+        self._text.step()
+        yield from self._text_patches()
+
+    async def _show_waiting_text(self) -> AsyncGenerator[DatastarEvent]:
+        """Show the waiting text in steps, before the end of the run."""
+        while self._text.is_waiting and not self._catching_up:
+            await asyncio.sleep(STEP_SECONDS)
+            for patch in self._tick():
+                yield patch
+
+    def _text_patches(self) -> Iterator[DatastarEvent]:
+        """Patch the blocks of the shown text that changed since the last patch."""
+        text_id = reply_text_id(self._snapshot.turn_id)
+        html = render_reply_text(
+            text=close_open_markdown(self._text.shown),
+            sanitizer=self._sanitizer,
+        )
+        blocks = number_blocks(html, id_prefix=f"{text_id}-")
+        sent, self._blocks = self._blocks, blocks
+        if blocks is None or sent is None:
+            yield SSE.patch_elements(
+                html if blocks is None else "".join(blocks),
+                selector=f"#{text_id}",
+                mode=ElementPatchMode.INNER,
+            )
+            return
+        for block, sent_block in zip(blocks, sent, strict=False):
+            if block != sent_block:
+                yield SSE.patch_elements(block)
+        if len(blocks) > len(sent):
+            yield SSE.patch_elements(
+                "".join(blocks[len(sent) :]),
+                selector=f"#{text_id}",
+                mode=ElementPatchMode.APPEND,
+            )
+        for index in range(len(blocks), len(sent)):
+            yield SSE.remove_elements(f"#{text_id}-{index}")
 
     def _run_end(
         self,

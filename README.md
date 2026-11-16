@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.3.0"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.4.0"
 ```
 
 ## Celery
@@ -80,6 +80,16 @@ urlpatterns = [
 ```
 
 The stream view streams. Serve the project with an ASGI server, for example uvicorn. `runserver` cannot stream.
+
+### The text of a reply
+
+The stream view shows the text of a reply in small steps, about one word each 45 milliseconds. The model sends its text in uneven parts, so the view keeps the text in a buffer. When the buffer grows, the steps grow too, so the text stays close to the model.
+
+Each top-level element of the reply text gets the ID `djpa-reply-<turn ID>-text-<number>`. A patch morphs only the block that changed, and a new block goes at the end. While the text streams, the view closes an open code fence, inline code span or bold text. It holds back a table until its delimiter row comes.
+
+A new stream, for example after a reload, shows the earlier text in one patch.
+
+The morph keeps each block that stays on the page. So a CSS animation on `.djpa-reply__text > *` plays only for a new block.
 
 Keep `CONN_MAX_AGE` at 0, the default, in `DATABASES`. The Django documentation says to disable persistent connections in async mode. Use the PostgreSQL pool of Django if you need a pool. The views free their database connection before the stream waits for events.
 

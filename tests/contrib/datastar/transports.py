@@ -10,17 +10,25 @@ from dj_pydantic_agents.kit.events import TurnEventDTO
 from tests.fakes import FakeTransport
 
 WAIT_SECONDS = 3600
+PAUSE_SECONDS = 0.05
+
+
+class Pause:
+    """A pause in a script: the read waits PAUSE_SECONDS, with no event."""
+
+
+PAUSE = Pause()
 
 
 class ScriptedTransport(FakeTransport):
     """Yield the stored events like the Redis transport: stop after a final event.
 
-    A None in the script is a wait with no event. After the script, the read
-    waits until the stream stops it. The reads record their after_id and
-    their close.
+    A None in the script is a wait with no event. A PAUSE waits a short time.
+    After the script, the read waits until the stream stops it. The reads
+    record their after_id and their close.
     """
 
-    script: ClassVar[list[TurnEventDTO | None]] = []
+    script: ClassVar[list[TurnEventDTO | Pause | None]] = []
     reads: ClassVar[list[str]] = []
     closed: ClassVar[int] = 0
 
@@ -44,6 +52,9 @@ class ScriptedTransport(FakeTransport):
                     continue
                 if event is None:
                     yield None
+                    continue
+                if isinstance(event, Pause):
+                    await asyncio.sleep(PAUSE_SECONDS)
                     continue
                 streamed = StreamedTurnEventDTO(event_id=str(number), event=event)
                 yield streamed
