@@ -1,24 +1,30 @@
 {% comment %}
 The chat of one conversation. The project page includes it, with the context
 "page": the result of get_conversation_page(). The page loads Datastar.
+
+djpa-chat__scroll is the scroll pane. With "display: flex" and
+"flex-direction: column-reverse" on it, the browser keeps the view at the
+newest line, with no JavaScript.
 {% endcomment %}
 <div id="djpa-chat" class="djpa-chat" data-signals="{_djpaStream: 0}">
-  <div id="djpa-transcript" class="djpa-transcript">
-    {% for line in page.lines %}
-      {% include "dj_pydantic_agents/transcript_line.html" with kind=line.kind text=line.text tool_name=line.tool_name only %}
-    {% endfor %}
-    {% with turn=page.active_turn %}
-      {% if turn.unsaved_prompt %}
-        {% include "dj_pydantic_agents/transcript_line.html" with kind="user" text=turn.unsaved_prompt only %}
-      {% endif %}
-      {% if turn.status == "waiting_approval" %}
-        {% for approval in page.approvals %}
-          {% include "dj_pydantic_agents/approval_card.html" with approval=approval csrf_token=csrf_token only %}
-        {% endfor %}
-      {% elif turn %}
-        {% include "dj_pydantic_agents/reply.html" with turn_id=turn.turn_id only %}
-      {% endif %}
-    {% endwith %}
+  <div class="djpa-chat__scroll">
+    <div id="djpa-transcript" class="djpa-transcript">
+      {% for line in page.lines %}
+        {% include "dj_pydantic_agents/transcript_line.html" with kind=line.kind text=line.text tool_name=line.tool_name only %}
+      {% endfor %}
+      {% with turn=page.active_turn %}
+        {% if turn.unsaved_prompt %}
+          {% include "dj_pydantic_agents/transcript_line.html" with kind="user" text=turn.unsaved_prompt only %}
+        {% endif %}
+        {% if turn.status == "waiting_approval" %}
+          {% for approval in page.approvals %}
+            {% include "dj_pydantic_agents/approval_card.html" with approval=approval csrf_token=csrf_token only %}
+          {% endfor %}
+        {% elif turn %}
+          {% include "dj_pydantic_agents/reply.html" with turn_id=turn.turn_id only %}
+        {% endif %}
+      {% endwith %}
+    </div>
   </div>
   {% include "dj_pydantic_agents/message_form.html" with conversation_id=page.conversation_id is_closed=page.active_turn csrf_token=csrf_token only %}
 </div>

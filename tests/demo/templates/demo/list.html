@@ -1,6 +1,7 @@
 {% extends "demo/base.html" %}
 {% block content %}
   <h1>Conversations</h1>
+  <p><a href="{% url 'demo:plan_login' %}">Connect ChatGPT plan</a></p>
   <form method="post" action="{% url 'demo:new' %}">
     {% csrf_token %}
     <button type="submit">New conversation</button>

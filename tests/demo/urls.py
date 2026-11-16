@@ -8,6 +8,12 @@ demo_patterns = (
         path("", views.conversation_list, name="list"),
         path("new/", views.new_conversation, name="new"),
         path("chat/<str:conversation_id>/", views.chat, name="chat"),
+        path("plan/", views.plan_login, name="plan_login"),
+        path(
+            "plan/complete/",
+            views.plan_login_complete,
+            name="plan_login_complete",
+        ),
     ],
     "demo",
 )

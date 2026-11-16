@@ -58,7 +58,7 @@ class TestSendMessage(TestCase):
         assert f'id="djpa-reply-{turn.id}"' in reply.elements
         stream_url = reverse("dj_pydantic_agents:stream_turn", args=[turn.id])
         assert f"@get('{stream_url}'" in reply.elements
-        assert 'id="djpa-message-form"' in form.elements
+        assert (form.selector, form.mode) == ("#djpa-message-form", "replace")
         assert "disabled" in form.elements
 
     async def test_a_failed_enqueue_shows_the_error_and_an_open_form(self):

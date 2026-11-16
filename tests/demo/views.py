@@ -11,10 +11,15 @@ from django.http import HttpRequest
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from dj_pydantic_agents.composition import build_conversation_command_service
 from dj_pydantic_agents.composition import build_conversation_query_service
+from dj_pydantic_agents.contrib.codex.composition import build_plan_login_service
+from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import ListConversationsQueryDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
@@ -55,6 +60,39 @@ def chat(request: HttpRequest, conversation_id: str) -> HttpResponse:
     except ConversationNotFound as error:
         raise Http404 from error
     return render(request, "demo/chat.html", {"page": page})
+
+
+def plan_login(request: HttpRequest, error: str = "") -> HttpResponse:
+    started = build_plan_login_service().start_login(
+        command=StartPlanLoginCommandDTO(user_id=_demo_user_id(request)),
+    )
+    return render(
+        request,
+        "demo/plan_login.html",
+        {
+            "authorization_url": started.authorization_url,
+            "form_action": reverse("demo:plan_login_complete"),
+            "error": error,
+        },
+    )
+
+
+@require_POST
+def plan_login_complete(request: HttpRequest) -> HttpResponse:
+    try:
+        connected = build_plan_login_service().complete_login(
+            command=CompletePlanLoginCommandDTO(
+                user_id=_demo_user_id(request),
+                pasted_url=request.POST.get("pasted_url", ""),
+            ),
+        )
+    except PlanLoginFailed as error:
+        return plan_login(request, error=str(error))
+    return render(
+        request,
+        "demo/plan_connected.html",
+        {"account_id": connected.account_id},
+    )
 
 
 def _demo_user_id(request: HttpRequest) -> int:

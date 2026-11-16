@@ -62,6 +62,7 @@ def render_message_form(
     conversation_id: str,
     is_closed: bool,
     csrf_token: str,
+    focus: bool = False,
 ) -> str:
     return _render(
         f"{TEMPLATES}/message_form.html",
@@ -69,6 +70,7 @@ def render_message_form(
             "conversation_id": conversation_id,
             "is_closed": is_closed,
             "csrf_token": csrf_token,
+            "focus": focus,
         },
     )
 

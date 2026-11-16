@@ -36,6 +36,7 @@ class TestChatTemplate(SimpleTestCase):
         )
 
         assert 'data-signals="{_djpaStream: 0}"' in html
+        assert '<div class="djpa-chat__scroll">' in html
         assert "djpa-line--user" in html
         assert "<strong>Ada</strong>" in html
         assert "djpa-reply" not in html

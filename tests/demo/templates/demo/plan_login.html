@@ -1,0 +1,6 @@
+{% extends "demo/base.html" %}
+{% block content %}
+  <p><a href="{% url 'demo:list' %}">All conversations</a></p>
+  <h1>Connect your ChatGPT plan</h1>
+  {% include "dj_pydantic_agents/codex/login_form.html" %}
+{% endblock %}

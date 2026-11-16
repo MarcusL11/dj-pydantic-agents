@@ -69,6 +69,7 @@ STREAM_SECONDS = 60
 # The signal of the page that opens a new stream when its value changes.
 STREAM_SIGNAL = "_djpaStream"
 TRANSCRIPT_SELECTOR = "#djpa-transcript"
+FORM_SELECTOR = "#djpa-message-form"
 KEEP_ALIVE = DatastarEvent(": keep-alive\n\n")
 
 _ERROR_STATUSES: tuple[tuple[type[DjPydanticAgentsError], int], ...] = (
@@ -277,7 +278,17 @@ class _TurnStream:
         approvals: tuple[ApprovalProjectionDTO, ...] = (),
         error_code: str = "",
     ) -> Iterator[DatastarEvent]:
-        """Put the end of the run in the place of the reply, then set the form."""
+        """Set the form, then put the end of the run in the place of the reply.
+
+        The form goes first. The removal of the reply stops this stream, so
+        the page does not get an event after it.
+        """
+        yield _form(
+            conversation_id=self._snapshot.conversation_id,
+            is_closed=bool(approvals),
+            csrf_token=self._csrf_token,
+            focus=not approvals,
+        )
         yield SSE.patch_elements(
             render_run_end(
                 reply_text=reply_text,
@@ -287,11 +298,6 @@ class _TurnStream:
             ),
             selector=f"#{reply_id(self._snapshot.turn_id)}",
             mode=ElementPatchMode.REPLACE,
-        )
-        yield _form(
-            conversation_id=self._snapshot.conversation_id,
-            is_closed=bool(approvals),
-            csrf_token=self._csrf_token,
         )
 
 
@@ -330,13 +336,23 @@ def _append(html: str) -> DatastarEvent:
     )
 
 
-def _form(*, conversation_id: str, is_closed: bool, csrf_token: str) -> DatastarEvent:
+def _form(
+    *,
+    conversation_id: str,
+    is_closed: bool,
+    csrf_token: str,
+    focus: bool = False,
+) -> DatastarEvent:
+    """Replace the form, not morph it: a morph keeps the typed text."""
     return SSE.patch_elements(
         render_message_form(
             conversation_id=conversation_id,
             is_closed=is_closed,
             csrf_token=csrf_token,
+            focus=focus,
         ),
+        selector=FORM_SELECTOR,
+        mode=ElementPatchMode.REPLACE,
     )
 
 

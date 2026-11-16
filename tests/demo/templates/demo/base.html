@@ -2,22 +2,61 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>dj-pydantic-agents demo</title>
     <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.2/bundles/datastar.js"></script>
     <style>
-      body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; }
-      .djpa-line, .djpa-reply, .djpa-approval { padding: .5rem .75rem; margin: .5rem 0; border-radius: .5rem; }
-      .djpa-line--user { background: #e8f0fe; }
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { display: flex; flex-direction: column; height: 100dvh; font: 16px/1.5 system-ui, sans-serif; color: #202124; }
+      a { color: #1a73e8; }
+      button { min-height: 2.75rem; padding: 0 1rem; border: 1px solid #dadce0; border-radius: .5rem; background: #fff; font: inherit; cursor: pointer; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      pre { overflow-x: auto; max-width: 100%; margin: .25rem 0 0; font-size: .8125rem; }
+
+      /* The page: a column that fills the window. Only the transcript scrolls. */
+      .demo-main { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: 48rem; margin: 0 auto; padding: 1rem; overflow-y: auto; }
+      .demo-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+      .demo-header h1 { margin: 0; font-size: 1.25rem; }
+      .demo-hint { margin: .25rem 0 .75rem; color: #5f6368; font-size: .875rem; }
+
+      /* The chat of the package. */
+      .djpa-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #dadce0; border-radius: .75rem; overflow: hidden; }
+      .djpa-chat__scroll { flex: 1; min-height: 0; display: flex; flex-direction: column-reverse; overflow-y: auto; overscroll-behavior: contain; padding: .75rem; }
+      .djpa-line, .djpa-reply, .djpa-approval { margin: .375rem 0; padding: .5rem .75rem; border-radius: .75rem; overflow-wrap: anywhere; }
+      .djpa-line :first-child, .djpa-reply__text :first-child { margin-top: 0; }
+      .djpa-line :last-child, .djpa-reply__text :last-child { margin-bottom: 0; }
+      .djpa-line--user { width: fit-content; max-width: 85%; margin-left: auto; background: #e8f0fe; }
       .djpa-line--assistant, .djpa-reply { background: #f1f3f4; }
-      .djpa-reply { border-left: 4px solid #1a73e8; }
+      .djpa-reply { min-height: 2.5rem; border-left: 3px solid #1a73e8; }
       .djpa-line--tool-call, .djpa-line--tool-result { background: #fef7e0; font-size: .875rem; }
-      .djpa-line--error { background: #fce8e6; }
-      .djpa-approval { border: 1px solid #f9ab00; }
-      .djpa-message-form { display: flex; gap: .5rem; }
-      .djpa-message-form__input { flex: 1; min-height: 3rem; }
+      .djpa-line__tool { font-weight: 600; }
+      .djpa-line--error { background: #fce8e6; color: #a50e0e; }
+      .djpa-approval { border: 1px solid #f9ab00; background: #fffbeb; }
+      .djpa-approval__tool { font-weight: 600; }
+      .djpa-approval__form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+      .djpa-approval__approve { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+      .djpa-message-form { flex: none; display: flex; gap: .5rem; padding: .75rem; border-top: 1px solid #dadce0; background: #fff; }
+      .djpa-message-form__input { flex: 1; min-width: 0; min-height: 2.75rem; max-height: 10rem; padding: .5rem .75rem; border: 1px solid #dadce0; border-radius: .5rem; font: inherit; resize: vertical; }
+      .djpa-message-form__send { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+
+      /* The plan login. */
+      .djpa-codex-login__form { display: flex; flex-wrap: wrap; gap: .5rem; }
+      .djpa-codex-login__input { flex: 1 1 16rem; min-height: 2.75rem; padding: 0 .75rem; border: 1px solid #dadce0; border-radius: .5rem; font: inherit; }
+      .djpa-codex-login__error { color: #a50e0e; }
+
+      @media (max-width: 40rem) {
+        .demo-main { padding: .5rem; }
+        .djpa-chat { border-radius: .5rem; }
+        .djpa-chat__scroll { padding: .5rem; }
+        .djpa-line--user { max-width: 92%; }
+        .djpa-message-form { padding: .5rem; }
+      }
     </style>
   </head>
   <body>
-    {% block content %}{% endblock %}
+    <main class="demo-main">
+      {% block content %}{% endblock %}
+    </main>
   </body>
 </html>

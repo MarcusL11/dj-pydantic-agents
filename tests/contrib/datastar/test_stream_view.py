@@ -96,6 +96,12 @@ class TestStreamTurn(TestCase):
         assert patch.selector == f"#djpa-reply-{self.turn.id}"
         assert patch.mode == "replace"
 
+    def assert_open_form(self, patch: Patch) -> None:
+        """A new form, not a morph, so that the typed text goes. It gets the focus."""
+        assert (patch.selector, patch.mode) == ("#djpa-message-form", "replace")
+        assert "disabled" not in patch.elements
+        assert 'data-init="el.focus()"' in patch.elements
+
     async def test_renders_the_full_text_at_each_text_event(self):
         ScriptedTransport.script = [
             TextDeltaEventDTO(text="Hello"),
@@ -104,16 +110,18 @@ class TestStreamTurn(TestCase):
             TurnDoneEventDTO(text="Hello **Ada**"),
         ]
 
-        first, second, end, form = await self.stream()
+        first, second, form, end = await self.stream()
 
         text_selector = f"#djpa-reply-{self.turn.id}-text"
         assert (first.selector, first.mode) == (text_selector, "inner")
         assert first.elements == "<p>Hello</p>"
         assert second.elements == "<p>Hello <strong>Ada</strong></p>"
+        # The form comes before the end of the run. The removal of the reply
+        # stops the stream in the browser, so no event can come after it.
+        self.assert_open_form(form)
         self.assert_run_end(end)
         assert "djpa-line--assistant" in end.elements
         assert "<strong>Ada</strong>" in end.elements
-        assert "disabled" not in form.elements
         assert ScriptedTransport.reads == ["0"]
         assert ScriptedTransport.closed == 1
 
@@ -123,7 +131,7 @@ class TestStreamTurn(TestCase):
             TurnFailedEventDTO(error_code="model_api_error"),
         ]
 
-        _text, end, form = await self.stream()
+        _text, form, end = await self.stream()
 
         self.assert_run_end(end)
         assert "djpa-line--error" in end.elements
@@ -165,7 +173,7 @@ class TestStreamTurn(TestCase):
     async def test_sends_a_keep_alive_when_no_event_comes(self):
         ScriptedTransport.script = [None, TurnDoneEventDTO(text="Hi")]
 
-        keep_alive, end, _form = await self.stream()
+        keep_alive, _form, end = await self.stream()
 
         assert keep_alive.kind == "comment"
         self.assert_run_end(end)
@@ -183,7 +191,7 @@ class TestStreamTurn(TestCase):
     async def test_a_done_turn_shows_the_reply_from_the_database(self):
         await self.set_turn(status=Turn.Status.DONE)
 
-        end, form = await self.stream()
+        form, end = await self.stream()
 
         self.assert_run_end(end)
         assert "<strong>Ada</strong>" in end.elements
@@ -199,7 +207,7 @@ class TestStreamTurn(TestCase):
             args_json='{"to":"ada"}',
         )
 
-        end, form = await self.stream()
+        form, end = await self.stream()
 
         self.assert_run_end(end)
         decide_url = reverse("dj_pydantic_agents:decide_approval", args=[approval.id])
@@ -212,7 +220,7 @@ class TestStreamTurn(TestCase):
             status_changed_at=timezone.now() - timedelta(seconds=STALE_SECONDS + 1),
         )
 
-        end, _form = await self.stream()
+        _form, end = await self.stream()
 
         assert "worker_lost" in end.elements
         turn = await Turn.objects.aget(id=self.turn.id)

@@ -126,11 +126,22 @@ The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, 
 
 The package has no CSS. Style these classes:
 
-- `djpa-chat`, `djpa-transcript`
+- `djpa-chat`, `djpa-chat__scroll` (the scroll pane), `djpa-transcript`
 - `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__tool`, `djpa-line__data`
 - `djpa-reply`, `djpa-reply__text`
 - `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
 - `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
+
+A chat with a fixed size and a scroll pane needs four rules. With `column-reverse`, the browser keeps the view at the newest line, with no JavaScript:
+
+```css
+.djpa-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.djpa-chat__scroll { flex: 1; min-height: 0; display: flex; flex-direction: column-reverse; overflow-y: auto; }
+.djpa-message-form { flex: none; display: flex; }
+.djpa-message-form__input { flex: 1; min-width: 0; }
+```
+
+The parent of `djpa-chat` must have a fixed height, for example `100dvh` minus the header. `tests/demo/templates/demo/base.html` has a full responsive example.
 
 ### The demo
 
