@@ -18,6 +18,7 @@ from dj_pydantic_agents.composition import build_conversation_command_service
 from dj_pydantic_agents.composition import build_conversation_query_service
 from dj_pydantic_agents.contrib.codex.composition import build_plan_login_service
 from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
 from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationPageQueryDTO
@@ -63,13 +64,15 @@ def chat(request: HttpRequest, conversation_id: str) -> HttpResponse:
 
 
 def plan_login(request: HttpRequest, error: str = "") -> HttpResponse:
-    started = build_plan_login_service().start_login(
-        command=StartPlanLoginCommandDTO(user_id=_demo_user_id(request)),
-    )
+    service = build_plan_login_service()
+    user_id = _demo_user_id(request)
+    status = service.get_plan_status(query=GetPlanStatusQueryDTO(user_id=user_id))
+    started = service.start_login(command=StartPlanLoginCommandDTO(user_id=user_id))
     return render(
         request,
         "demo/plan_login.html",
         {
+            "status": status,
             "authorization_url": started.authorization_url,
             "form_action": reverse("demo:plan_login_complete"),
             "error": error,

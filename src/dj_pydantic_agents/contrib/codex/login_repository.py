@@ -5,7 +5,9 @@ from django.utils import timezone
 
 from dj_pydantic_agents.contrib.codex.dtos import CreatePlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.dtos import GetPlanLoginQueryDTO
+from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
 from dj_pydantic_agents.contrib.codex.dtos import PlanLoginProjectionDTO
+from dj_pydantic_agents.contrib.codex.dtos import PlanStatusProjectionDTO
 from dj_pydantic_agents.contrib.codex.dtos import SavePlanCredentialCommandDTO
 from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
 from dj_pydantic_agents.contrib.codex.models import PlanCredential
@@ -45,6 +47,22 @@ class PlanLoginRepository:
             login_id=login["id"],
             state=login["state"],
             code_verifier=login["code_verifier"],
+        )
+
+    def get_plan_status(
+        self,
+        *,
+        query: GetPlanStatusQueryDTO,
+    ) -> PlanStatusProjectionDTO:
+        """Read only the saved row. Do not decrypt the tokens."""
+        account_id = (
+            PlanCredential.objects.filter(user_id=query.user_id)  # type: ignore[misc]
+            .values_list("account_id", flat=True)
+            .first()
+        )
+        return PlanStatusProjectionDTO(
+            connected=account_id is not None,
+            account_id=account_id,
         )
 
     @transaction.atomic

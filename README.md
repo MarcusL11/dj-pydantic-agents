@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.1.1"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.2.0"
 ```
 
 ## Celery
@@ -236,6 +236,17 @@ def plan_login_complete(request):
     except PlanLoginFailed as error:
         return plan_login(request, error=str(error))
     return redirect("dashboard:agent_chat_list")
+```
+
+`get_plan_status()` tells if the user saved a plan, and gives the account ID. It reads only the saved row. It does not decrypt the tokens and makes no request, so a token that OpenAI revoked still shows as connected. The next turn then fails with `plan_not_connected`.
+
+```python
+from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
+
+status = build_plan_login_service().get_plan_status(
+    query=GetPlanStatusQueryDTO(user_id=request.user.pk),
+)
+# status.connected: bool, status.account_id: str | None
 ```
 
 The page template includes the form:

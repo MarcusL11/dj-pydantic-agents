@@ -25,6 +25,17 @@ class PlanConnectedResultDTO(InternalDTO):
     account_id: str
 
 
+class GetPlanStatusQueryDTO(InternalDTO):
+    user_id: UserId
+
+
+class PlanStatusProjectionDTO(InternalDTO):
+    """The saved plan of a user. The tokens can still fail at the next request."""
+
+    connected: bool
+    account_id: str | None
+
+
 class CreatePlanLoginCommandDTO(InternalDTO):
     user_id: UserId
     state: str

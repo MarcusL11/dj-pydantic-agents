@@ -2,5 +2,8 @@
 {% block content %}
   <p><a href="{% url 'demo:list' %}">All conversations</a></p>
   <h1>Connect your ChatGPT plan</h1>
+  {% if status.connected %}
+    <p>Your plan is connected (account {{ status.account_id }}). Sign in again to connect another account.</p>
+  {% endif %}
   {% include "dj_pydantic_agents/codex/login_form.html" %}
 {% endblock %}

@@ -25,6 +25,8 @@ from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
 
 if TYPE_CHECKING:
     from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
+    from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
+    from dj_pydantic_agents.contrib.codex.dtos import PlanStatusProjectionDTO
     from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
     from dj_pydantic_agents.contrib.codex.login_repository import PlanLoginRepository
 
@@ -35,6 +37,14 @@ LOGIN_SECONDS = 600
 class PlanLoginService:
     def __init__(self, *, repository: PlanLoginRepository) -> None:
         self._repository = repository
+
+    def get_plan_status(
+        self,
+        *,
+        query: GetPlanStatusQueryDTO,
+    ) -> PlanStatusProjectionDTO:
+        """Tell if the user saved a plan. The tokens can still fail later."""
+        return self._repository.get_plan_status(query=query)
 
     def start_login(
         self,

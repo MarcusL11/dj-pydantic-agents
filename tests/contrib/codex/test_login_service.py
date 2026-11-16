@@ -10,6 +10,8 @@ from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from dj_pydantic_agents.contrib.codex.composition import build_plan_login_service
 from dj_pydantic_agents.contrib.codex.crypto import decrypt_tokens
 from dj_pydantic_agents.contrib.codex.dtos import CompletePlanLoginCommandDTO
+from dj_pydantic_agents.contrib.codex.dtos import GetPlanStatusQueryDTO
+from dj_pydantic_agents.contrib.codex.dtos import PlanStatusProjectionDTO
 from dj_pydantic_agents.contrib.codex.dtos import StartPlanLoginCommandDTO
 from dj_pydantic_agents.contrib.codex.errors import PlanLoginFailed
 from dj_pydantic_agents.contrib.codex.models import PlanCredential
@@ -133,3 +135,39 @@ class TestPlanLoginService(TestCase):
         self.start()
 
         assert PlanLogin.objects.filter(user=self.user).count() == 1
+
+    def status(self, user=None) -> PlanStatusProjectionDTO:
+        return self.service.get_plan_status(
+            query=GetPlanStatusQueryDTO(user_id=(user or self.user).pk),
+        )
+
+    def test_the_status_of_a_user_without_a_plan(self):
+        assert self.status() == PlanStatusProjectionDTO(
+            connected=False,
+            account_id=None,
+        )
+
+    def test_the_status_after_a_login_shows_the_account(self):
+        params = self.start()
+        connected = self.complete(state=params["state"][0])
+
+        assert self.status() == PlanStatusProjectionDTO(
+            connected=True,
+            account_id=connected.account_id,
+        )
+
+    def test_the_status_shows_only_the_plan_of_the_user(self):
+        params = self.start()
+        self.complete(state=params["state"][0])
+
+        assert self.status(user=UserFactory.create()).connected is False
+
+    def test_the_status_reads_one_row_and_makes_no_request(self):
+        params = self.start()
+        self.complete(state=params["state"][0])
+        requests_before = len(self.endpoint.requests)
+
+        with self.assertNumQueries(1):
+            self.status()
+
+        assert len(self.endpoint.requests) == requests_before
