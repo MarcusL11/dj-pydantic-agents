@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.5.0"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.5.1"
 ```
 
 ## Celery
@@ -154,7 +154,7 @@ The package has no CSS. Style these classes:
 
 - `djpa-chat`, `djpa-chat__scroll` (the scroll pane), `djpa-transcript`
 - `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__summary`, `djpa-line__data`. A tool line is a closed `<details>` element.
-- `djpa-reply`, `djpa-reply__steps`, `djpa-step` with `djpa-step--running` or `djpa-step--called`, `djpa-reply__text`
+- `djpa-reply`, `djpa-reply__steps`, `djpa-step` (a step line while the reply streams), `djpa-reply__text`
 - `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
 - `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
 
