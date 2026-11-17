@@ -7,6 +7,7 @@ from pydantic import Field
 from pydantic import TypeAdapter
 from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.messages import FunctionToolCallEvent
+from pydantic_ai.messages import NativeToolCallPart
 from pydantic_ai.messages import PartDeltaEvent
 from pydantic_ai.messages import PartStartEvent
 from pydantic_ai.messages import TextPart
@@ -92,6 +93,13 @@ def to_turn_event(event: AgentStreamEvent) -> TurnEventDTO | None:
         case PartDeltaEvent(delta=TextPartDelta(content_delta=text)) if text:
             return TextDeltaEventDTO(text=text)
         case FunctionToolCallEvent(part=part):
+            return ToolCallEventDTO(
+                tool_call_id=part.tool_call_id,
+                tool_name=part.tool_name,
+            )
+        # A provider runs a native tool, such as web_search, inside its own
+        # response. So no FunctionToolCallEvent comes for it.
+        case PartStartEvent(part=NativeToolCallPart() as part):
             return ToolCallEventDTO(
                 tool_call_id=part.tool_call_id,
                 tool_name=part.tool_name,

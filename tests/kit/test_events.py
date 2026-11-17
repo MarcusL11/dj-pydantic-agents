@@ -1,4 +1,5 @@
 from pydantic_ai.messages import FunctionToolCallEvent
+from pydantic_ai.messages import NativeToolCallPart
 from pydantic_ai.messages import PartDeltaEvent
 from pydantic_ai.messages import PartEndEvent
 from pydantic_ai.messages import PartStartEvent
@@ -42,6 +43,14 @@ class TestToTurnEvent(SimpleTestCase):
         assert to_turn_event(FunctionToolCallEvent(part=part)) == ToolCallEventDTO(
             tool_call_id="call-1",
             tool_name="send_mail",
+        )
+
+    def test_native_tool_call(self):
+        part = NativeToolCallPart(tool_name="web_search", tool_call_id="ws-1")
+
+        assert to_turn_event(PartStartEvent(index=0, part=part)) == ToolCallEventDTO(
+            tool_call_id="ws-1",
+            tool_name="web_search",
         )
 
     def test_other_events_are_skipped(self):

@@ -41,6 +41,10 @@ ALLOWED_TAGS = frozenset(
 ALLOWED_ATTRIBUTES = {"a": frozenset({"href", "title"})}
 URL_SCHEMES = frozenset({"http", "https", "mailto"})
 LINK_REL = "noopener noreferrer"
+# Each link opens in a new tab, so that a click does not close the chat. nh3
+# sets the value. The model cannot set a target, because "target" is not in
+# ALLOWED_ATTRIBUTES.
+LINK_ATTRIBUTE_VALUES = {"a": {"target": "_blank"}}
 
 
 class Nh3Sanitizer:
@@ -52,4 +56,5 @@ class Nh3Sanitizer:
             attributes=ALLOWED_ATTRIBUTES,
             url_schemes=URL_SCHEMES,
             link_rel=LINK_REL,
+            set_tag_attribute_values=LINK_ATTRIBUTE_VALUES,
         )

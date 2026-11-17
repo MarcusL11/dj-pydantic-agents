@@ -80,6 +80,20 @@ class TestRedisStreamTransport(SimpleTestCase):
 
         assert first is None
 
+    async def test_the_read_socket_waits_longer_than_the_block(self):
+        """redis-py 8 stops a read after 5 s by default. The block is longer."""
+        self.publish(TurnDoneEventDTO(text="Hi"))
+
+        with mock.patch.object(
+            redis_stream.AsyncRedis,
+            "from_url",
+            wraps=redis_stream.AsyncRedis.from_url,
+        ) as from_url:
+            await self.read_all()
+
+        socket_timeout = from_url.call_args.kwargs["socket_timeout"]
+        assert socket_timeout > redis_stream.BLOCK_MILLISECONDS / 1000
+
     async def test_read_logs_and_skips_a_bad_entry(self):
         key = stream_key(self.turn_id)
         self.redis.xadd(key, {"event": "not json"})

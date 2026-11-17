@@ -1,8 +1,13 @@
 {% load i18n %}
 {% comment %}
 The end of a run. The stream view puts it in the place of the reply. The
-context: reply_text, approvals, error_code and csrf_token.
+context: tool_names, reply_text, approvals, error_code and csrf_token. The
+steps stay as finished lines. The stream has no data of the calls, so the
+full tool lines show after a reload.
 {% endcomment %}
+{% if tool_names %}
+  <div class="djpa-reply__steps">{% include "dj_pydantic_agents/tool_steps.html" with tool_names=tool_names state="called" only %}</div>
+{% endif %}
 {% if reply_text %}
   {% include "dj_pydantic_agents/transcript_line.html" with kind="assistant" text=reply_text only %}
 {% endif %}

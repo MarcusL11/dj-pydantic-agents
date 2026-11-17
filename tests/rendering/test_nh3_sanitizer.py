@@ -33,13 +33,19 @@ class TestNh3Sanitizer(SimpleTestCase):
         assert "<th>a</th>" in html
         assert "<td>2</td>" in html
 
-    def test_a_link_gets_rel(self):
+    def test_a_link_opens_in_a_new_tab_with_rel(self):
         html = self.to_html('[site](https://example.com "Site")')
 
         assert html == (
-            '<p><a href="https://example.com" title="Site" '
+            '<p><a href="https://example.com" title="Site" target="_blank" '
             'rel="noopener noreferrer">site</a></p>'
         )
+
+    def test_the_model_cannot_set_the_target_of_a_link(self):
+        html = self.to_html('<a href="https://example.com" target="_self">x</a>')
+
+        assert 'target="_blank"' in html
+        assert "_self" not in html
 
     @parametrize(
         ("text", "removed"),
