@@ -19,8 +19,21 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.5.1"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.6.0"
 ```
+
+## Usage limits
+
+`USAGE_LIMITS` holds the keyword arguments of `pydantic_ai.usage.UsageLimits` for one run of a turn. A run that goes over a limit fails with the code `usage_limit`. The default is `None`, with no limit.
+
+```python
+DJ_PYDANTIC_AGENTS = {
+    ...,
+    "USAGE_LIMITS": {"request_limit": 60},
+}
+```
+
+A resume after approvals is a new run, so it gets the full limits again. The Harness `SubAgents` capability adds the usage of each child to the run by default. Then the limits also cover the children. The check `dj_pydantic_agents.E007` fails when `UsageLimits` does not accept the value.
 
 ## Celery
 
@@ -148,7 +161,7 @@ Then the page uses `<c-agent-chat :page="page" />`.
 
 ### Templates and class names
 
-The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". It also has words for `delegate_task`, the tool of the Harness `SubAgents` capability: "Delegating a task", "Delegated a task" and "Result of a task". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
 
 The package has no CSS. Style these classes:
 

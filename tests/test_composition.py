@@ -1,10 +1,14 @@
+from unittest import mock
 from unittest.mock import create_autospec
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
+from pydantic_ai.usage import UsageLimits
 from unittest_parametrize import param
 from unittest_parametrize import parametrize
 
+from dj_pydantic_agents import composition
 from dj_pydantic_agents.composition import build_conversation_command_service
 from dj_pydantic_agents.composition import build_conversation_query_service
 from dj_pydantic_agents.composition import build_event_transport
@@ -35,6 +39,28 @@ class TestComposition(SimpleTestCase):
     def test_builds_the_transport_and_the_sanitiser_from_the_settings(self):
         assert isinstance(build_event_transport(), FakeTransport)
         assert isinstance(build_reply_sanitizer(), Nh3Sanitizer)
+
+    @parametrize(
+        ("usage_limits", "expected"),
+        [
+            param(None, None, id="no_limits"),
+            param(
+                {"request_limit": 60},
+                UsageLimits(request_limit=60),
+                id="request_limit",
+            ),
+        ],
+    )
+    def test_the_turn_run_service_gets_the_usage_limits(self, usage_limits, expected):
+        values = {**settings.DJ_PYDANTIC_AGENTS, "USAGE_LIMITS": usage_limits}
+
+        with (
+            override_settings(DJ_PYDANTIC_AGENTS=values),
+            mock.patch.object(composition, "TurnRunService") as service_class,
+        ):
+            build_turn_run_service()
+
+        assert service_class.call_args.kwargs["usage_limits"] == expected
 
     @override_settings(DJ_PYDANTIC_AGENTS={})
     def test_a_missing_setting_stops_the_build(self):

@@ -19,6 +19,7 @@ class TestLoadSettings(SimpleTestCase):
             "dj_pydantic_agents.rendering.nh3_sanitizer.Nh3Sanitizer"
         )
         assert settings.stale_turn_seconds == DEFAULT_STALE_TURN_SECONDS
+        assert settings.usage_limits is None
 
     @override_settings(
         DJ_PYDANTIC_AGENTS={

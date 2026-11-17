@@ -30,6 +30,9 @@ DEFAULTS: Mapping[str, Any] = {
     "STALE_TURN_SECONDS": 1800,
     # The Fernet keys of contrib.codex. The first key encrypts, each key decrypts.
     "CODEX_TOKEN_KEYS": (),
+    # The keyword arguments of pydantic_ai.usage.UsageLimits for one run of a
+    # turn, for example {"request_limit": 60}. None sets no limit.
+    "USAGE_LIMITS": None,
 }
 
 
@@ -47,6 +50,7 @@ class PackageSettings:
     celery_queue: str | None
     stale_turn_seconds: int
     codex_token_keys: Sequence[str]
+    usage_limits: Mapping[str, Any] | None
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -77,4 +81,5 @@ def load_settings() -> PackageSettings:
         celery_queue=values["CELERY_QUEUE"],
         stale_turn_seconds=values["STALE_TURN_SECONDS"],
         codex_token_keys=values["CODEX_TOKEN_KEYS"],
+        usage_limits=values["USAGE_LIMITS"],
     )

@@ -13,6 +13,7 @@ from django.apps import apps
 from django.core.checks import Error
 from django.core.checks import register
 from django.utils.module_loading import import_string
+from pydantic_ai.usage import UsageLimits
 
 from dj_pydantic_agents.conf import SETTING_NAME
 from dj_pydantic_agents.conf import missing_keys
@@ -71,7 +72,12 @@ def check_settings(
         path = configured.get(key)
         if path is not None:
             errors += _contract_errors(key=key, path=path, methods=methods)
-    return errors + _redis_url_errors(configured) + _celery_app_errors(configured)
+    return (
+        errors
+        + _redis_url_errors(configured)
+        + _celery_app_errors(configured)
+        + _usage_limit_errors(configured)
+    )
 
 
 def _spec_errors(path: str) -> list[Error]:
@@ -157,6 +163,17 @@ def _celery_app_errors(configured: Mapping[str, Any]) -> list[Error]:
                 f"The Celery task runner needs {CELERY_APP} in INSTALLED_APPS.",
             ),
         ]
+    return []
+
+
+def _usage_limit_errors(configured: Mapping[str, Any]) -> list[Error]:
+    values = configured.get("USAGE_LIMITS")
+    if values is None:
+        return []
+    try:
+        UsageLimits(**values)
+    except TypeError as error:
+        return [_error("E007", f"USAGE_LIMITS is not valid for UsageLimits: {error}.")]
     return []
 
 

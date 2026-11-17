@@ -60,7 +60,7 @@ CELERY_RUNNER = f"{CELERY_APP}.runner.CeleryTaskRunner"
 REDIS_TRANSPORT = "dj_pydantic_agents.transports.redis_stream.RedisStreamTransport"
 
 
-def with_keys(**overrides: str | None) -> dict[str, str | None]:
+def with_keys(**overrides: object) -> dict[str, object]:
     return {**settings.DJ_PYDANTIC_AGENTS, **overrides}
 
 
@@ -113,11 +113,19 @@ class TestCheckSettings(SimpleTestCase):
                 "E005",
                 id="no_redis_url",
             ),
+            param({"USAGE_LIMITS": {"requests": 60}}, "E007", id="usage_key"),
+            param({"USAGE_LIMITS": [60]}, "E007", id="usage_type"),
         ],
     )
     def test_reports_a_wrong_extension_point(self, overrides, error_id):
         with override_settings(DJ_PYDANTIC_AGENTS=with_keys(**overrides)):
             assert self.check_ids() == [f"dj_pydantic_agents.{error_id}"]
+
+    def test_accepts_usage_limits(self):
+        values = with_keys(USAGE_LIMITS={"request_limit": 60})
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert check_settings() == []
 
     def test_accepts_keyword_arguments_by_name_or_by_kwargs(self):
         runner = "tests.test_checks.KeywordsRunner"

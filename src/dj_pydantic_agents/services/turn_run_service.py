@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from functools import partial
 
 from pydantic_ai.usage import RunUsage
+from pydantic_ai.usage import UsageLimits
 
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
@@ -57,6 +58,7 @@ class TurnRunService:
         model_factory: ModelFactory,
         transport: EventTransport,
         runner: TurnRunner,
+        usage_limits: UsageLimits | None = None,
     ) -> None:
         self._repository = repository
         self._specs = specs
@@ -64,6 +66,8 @@ class TurnRunService:
         self._model_factory = model_factory
         self._transport = transport
         self._runner = runner
+        # The limits of one run. A resume after approvals is a new run.
+        self._usage_limits = usage_limits
 
     def run_turn(self, *, command: RunTurnCommandDTO) -> None:
         """Run a queued turn. A failure records its code and does not raise."""
@@ -127,6 +131,7 @@ class TurnRunService:
                 decisions=run_input.decisions,
                 deps=deps,
                 on_event=combiner,
+                usage_limits=self._usage_limits,
             )
         finally:
             # The waiting text goes before the final event, also after an error.
