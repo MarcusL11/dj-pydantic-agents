@@ -24,6 +24,10 @@ def reply_text_id(turn_id: str) -> str:
     return f"{reply_id(turn_id)}-text"
 
 
+def reply_steps_id(turn_id: str) -> str:
+    return f"{reply_id(turn_id)}-steps"
+
+
 def render_transcript_line(*, kind: str, text: str) -> str:
     return _render(
         f"{TEMPLATES}/transcript_line.html",
@@ -33,6 +37,10 @@ def render_transcript_line(*, kind: str, text: str) -> str:
 
 def render_reply(*, turn_id: str) -> str:
     return _render(f"{TEMPLATES}/reply.html", {"turn_id": turn_id})
+
+
+def render_tool_steps(*, tool_names: Sequence[str]) -> str:
+    return _render(f"{TEMPLATES}/tool_steps.html", {"tool_names": tool_names})
 
 
 def render_reply_text(*, text: str, sanitizer: ReplySanitizer) -> str:

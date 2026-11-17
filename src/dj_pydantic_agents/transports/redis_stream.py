@@ -35,6 +35,9 @@ STREAM_TTL_SECONDS = 3600
 STREAM_MAX_LENGTH = 10_000
 # After this wait with no event, read() yields None for a keep-alive.
 BLOCK_MILLISECONDS = 15_000
+# The read socket waits this much longer than the block. redis-py 8 sets a
+# 5 s socket timeout by default, so a block of 15 s fails without this.
+SOCKET_MARGIN_SECONDS = 5
 READ_COUNT = 50
 
 
@@ -66,7 +69,11 @@ class RedisStreamTransport:
         after_id: str = START_EVENT_ID,
     ) -> AsyncGenerator[StreamedTurnEventDTO | None]:
         key = stream_key(turn_id)
-        client = AsyncRedis.from_url(self._url, decode_responses=True)
+        client = AsyncRedis.from_url(
+            self._url,
+            decode_responses=True,
+            socket_timeout=BLOCK_MILLISECONDS / 1000 + SOCKET_MARGIN_SECONDS,
+        )
         last_id = after_id
         try:
             while True:

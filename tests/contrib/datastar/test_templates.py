@@ -56,6 +56,7 @@ class TestChatTemplate(SimpleTestCase):
 
         assert "How are you?" in html
         assert f'id="djpa-reply-{TURN_ID}"' in html
+        assert f'id="djpa-reply-{TURN_ID}-steps"' in html
         assert "requestCancellation: 'cleanup'" in html
         assert "disabled" in html
 

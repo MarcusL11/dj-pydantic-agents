@@ -2,9 +2,11 @@
 {% comment %}
 The reply of a run while it streams. The data-effect opens the stream. It
 opens a new stream each time the stream view changes the _djpaStream signal.
-The stream view replaces this element at the end of the run.
+The stream view fills the steps with a line for each tool call. It replaces
+this element at the end of the run.
 {% endcomment %}
 <div id="djpa-reply-{{ turn_id }}" class="djpa-reply"
      data-effect="$_djpaStream; @get('{% url 'dj_pydantic_agents:stream_turn' turn_id %}', {requestCancellation: 'cleanup', filterSignals: {include: /^$/}})">
+  <div id="djpa-reply-{{ turn_id }}-steps" class="djpa-reply__steps"></div>
   <div id="djpa-reply-{{ turn_id }}-text" class="djpa-reply__text"></div>
 </div>

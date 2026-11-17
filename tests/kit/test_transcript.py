@@ -2,6 +2,8 @@ from pydantic_ai.messages import ImageUrl
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.messages import ModelRequest
 from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import NativeToolCallPart
+from pydantic_ai.messages import NativeToolReturnPart
 from pydantic_ai.messages import SystemPromptPart
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import ThinkingPart
@@ -72,6 +74,34 @@ class TestTranscriptLines(SimpleTestCase):
         assert transcript_lines(messages) == (
             TranscriptLineDTO(kind="user", text="Look"),
             TranscriptLineDTO(kind="user", text=NON_TEXT_PROMPT),
+        )
+
+    def test_a_native_tool_call_shows_and_its_status_does_not(self):
+        messages: list[ModelMessage] = [
+            ModelResponse(
+                parts=[
+                    NativeToolCallPart(
+                        tool_name="web_search",
+                        args={"query": "Rolex 126610LN price"},
+                        tool_call_id="ws-1",
+                    ),
+                    NativeToolReturnPart(
+                        tool_name="web_search",
+                        content={"status": "completed"},
+                        tool_call_id="ws-1",
+                    ),
+                    TextPart(content="It costs 9,500 GBP."),
+                ],
+            ),
+        ]
+
+        assert transcript_lines(messages) == (
+            TranscriptLineDTO(
+                kind="tool_call",
+                text='{"query":"Rolex 126610LN price"}',
+                tool_name="web_search",
+            ),
+            TranscriptLineDTO(kind="assistant", text="It costs 9,500 GBP."),
         )
 
 

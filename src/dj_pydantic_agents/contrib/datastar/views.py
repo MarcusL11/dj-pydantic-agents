@@ -27,8 +27,10 @@ from dj_pydantic_agents.contrib.datastar.rendering import render_message_form
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply_text
 from dj_pydantic_agents.contrib.datastar.rendering import render_run_end
+from dj_pydantic_agents.contrib.datastar.rendering import render_tool_steps
 from dj_pydantic_agents.contrib.datastar.rendering import render_transcript_line
 from dj_pydantic_agents.contrib.datastar.rendering import reply_id
+from dj_pydantic_agents.contrib.datastar.rendering import reply_steps_id
 from dj_pydantic_agents.contrib.datastar.rendering import reply_text_id
 from dj_pydantic_agents.contrib.datastar.streaming import TextReveal
 from dj_pydantic_agents.contrib.datastar.streaming import close_open_markdown
@@ -47,6 +49,7 @@ from dj_pydantic_agents.errors import TurnNotQueued
 from dj_pydantic_agents.kit.events import START_EVENT_ID
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import TextDeltaEventDTO
+from dj_pydantic_agents.kit.events import ToolCallEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
 from dj_pydantic_agents.kit.events import TurnFailedEventDTO
 
@@ -188,7 +191,8 @@ class _TurnStream:
 
     A new stream first catches up: it shows the text of the earlier events in
     one patch. After that, it shows each new text in small, even steps. Each
-    patch changes only the blocks of the reply that changed.
+    patch changes only the blocks of the reply that changed. A tool call adds
+    a step line above the text.
     """
 
     def __init__(
@@ -206,6 +210,8 @@ class _TurnStream:
         self._text = TextReveal()
         # The blocks on the page. None: the next patch replaces the full text.
         self._blocks: tuple[str, ...] | None = None
+        # The tool name of each step line, in the order of the calls.
+        self._steps: list[str] = []
         self._catching_up = True
         self._deadline = 0.0
 
@@ -250,6 +256,7 @@ class _TurnStream:
                     elif self._is_earlier_stop(item.event):
                         self._text.clear()
                         self._blocks = None
+                        self._steps.clear()
                         after_id = item.event_id
                     else:
                         async for event in self._patches_for(item.event):
@@ -312,24 +319,28 @@ class _TurnStream:
         )
 
     async def _patches_for(self, event: TurnEventDTO) -> AsyncGenerator[DatastarEvent]:
+        if isinstance(event, TurnDoneEventDTO):
+            async for patch in self._show_waiting_text():
+                yield patch
+        for patch in self._event_patches(event):
+            yield patch
+
+    def _event_patches(self, event: TurnEventDTO) -> Iterator[DatastarEvent]:
         match event:
             case TextDeltaEventDTO(text=text):
-                for patch in self._add_text(text):
-                    yield patch
+                return self._add_text(text)
+            case ToolCallEventDTO(tool_name=tool_name):
+                return self._add_step(tool_name)
             case TurnDoneEventDTO(text=text):
-                async for patch in self._show_waiting_text():
-                    yield patch
-                for patch in self._run_end(reply_text=text):
-                    yield patch
+                return self._run_end(reply_text=text)
             case TurnFailedEventDTO(error_code=error_code):
-                for patch in self._run_end(error_code=error_code):
-                    yield patch
+                return self._run_end(error_code=error_code)
             case ApprovalRequestedEventDTO():
                 # The event has no approval IDs for the buttons. The next
                 # stream reads them with its snapshot.
-                yield _reconnect()
+                return iter((_reconnect(),))
             case _:
-                pass
+                return iter(())
 
     def _add_text(self, text: str) -> Iterator[DatastarEvent]:
         """Show the first step of a new text at once. A catch-up shows all of it."""
@@ -339,6 +350,22 @@ class _TurnStream:
             return
         self._text.step()
         yield from self._text_patches()
+
+    def _add_step(self, tool_name: str) -> Iterator[DatastarEvent]:
+        """Show a step line for a tool call, and replace all the steps.
+
+        A replacement is safe for a new stream: it replays the steps from the
+        first event. A call of the same tool as the last step adds no line.
+        A native web search, for example, searches and then opens a page.
+        """
+        if self._steps and self._steps[-1] == tool_name:
+            return
+        self._steps.append(tool_name)
+        yield SSE.patch_elements(
+            render_tool_steps(tool_names=self._steps),
+            selector=f"#{reply_steps_id(self._snapshot.turn_id)}",
+            mode=ElementPatchMode.INNER,
+        )
 
     async def _show_waiting_text(self) -> AsyncGenerator[DatastarEvent]:
         """Show the waiting text in steps, before the end of the run."""

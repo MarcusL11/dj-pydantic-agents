@@ -116,6 +116,9 @@ class TestStreamTurn(TestCase):
     def text_id(self) -> str:
         return f"djpa-reply-{self.turn.id}-text"
 
+    def steps_id(self) -> str:
+        return f"djpa-reply-{self.turn.id}-steps"
+
     async def test_a_live_text_patches_only_the_block_that_changed(self):
         ScriptedTransport.script = [
             PAUSE,
@@ -126,11 +129,14 @@ class TestStreamTurn(TestCase):
             TurnDoneEventDTO(text="Hello **Ada**"),
         ]
 
-        first, second, form, end = await self.stream()
+        first, step, second, form, end = await self.stream()
 
         # The first patch of a stream replaces the full text.
         assert (first.selector, first.mode) == (f"#{self.text_id()}", "inner")
         assert first.elements == f'<p id="{self.text_id()}-0">Hello</p>'
+        # A tool call shows a step line above the text.
+        assert (step.selector, step.mode) == (f"#{self.steps_id()}", "inner")
+        assert "Using send_mail" in step.elements
         # A later patch morphs the block with the same ID.
         assert (second.selector, second.mode) == ("", "outer")
         assert second.elements == (
@@ -192,6 +198,39 @@ class TestStreamTurn(TestCase):
         )
         self.assert_open_form(form)
         self.assert_run_end(end)
+
+    async def test_each_new_tool_adds_a_step_line(self):
+        ScriptedTransport.script = [
+            PAUSE,
+            ToolCallEventDTO(tool_call_id="ws-1", tool_name="web_search"),
+            # A native web search opens a page after the search.
+            ToolCallEventDTO(tool_call_id="ws-2", tool_name="web_search"),
+            ToolCallEventDTO(tool_call_id="call-1", tool_name="send_mail"),
+            TurnDoneEventDTO(text="Done"),
+        ]
+
+        search, both, *_rest = await self.stream()
+
+        assert search.selector == f"#{self.steps_id()}"
+        assert search.elements.count('class="djpa-step"') == 1
+        assert "Searching the web" in search.elements
+        assert both.mode == "inner"
+        assert both.elements.count('class="djpa-step"') == 2  # noqa: PLR2004
+        assert "Using send_mail" in both.elements
+
+    async def test_a_new_stream_shows_the_earlier_steps(self):
+        ScriptedTransport.script = [
+            ToolCallEventDTO(tool_call_id="ws-1", tool_name="web_search"),
+            TextDeltaEventDTO(text="Hello"),
+            PAUSE,
+            TurnDoneEventDTO(text="Hello"),
+        ]
+
+        step, text, _form, _end = await self.stream()
+
+        assert (step.selector, step.mode) == (f"#{self.steps_id()}", "inner")
+        assert "Searching the web" in step.elements
+        assert text.selector == f"#{self.text_id()}"
 
     async def test_open_markdown_shows_closed_while_it_streams(self):
         ScriptedTransport.script = [

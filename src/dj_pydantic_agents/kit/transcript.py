@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from typing import Literal
 
 from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import NativeToolCallPart
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.messages import ToolReturnPart
@@ -29,7 +30,11 @@ class TranscriptLineDTO(InternalDTO):
 
 
 def transcript_lines(messages: Sequence[ModelMessage]) -> tuple[TranscriptLineDTO, ...]:
-    """Map the history to lines. Skip system, instruction, thinking and retry parts."""
+    """Map the history to lines.
+
+    Skip system, instruction, thinking and retry parts. Also skip the result of
+    a native tool: the provider gives only a status, for example "completed".
+    """
     return tuple(
         line
         for message in messages
@@ -62,7 +67,9 @@ def _line(part: ModelRequestPart | ModelResponsePart) -> TranscriptLineDTO | Non
             return TranscriptLineDTO(kind="user", text=text)
         case TextPart(content=text) if text:
             return TranscriptLineDTO(kind="assistant", text=text)
-        case ToolCallPart(tool_name=tool_name):
+        case (
+            ToolCallPart(tool_name=tool_name) | NativeToolCallPart(tool_name=tool_name)
+        ):
             return TranscriptLineDTO(
                 kind="tool_call",
                 text=part.args_as_json_str(),
