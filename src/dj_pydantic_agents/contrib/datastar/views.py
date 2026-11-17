@@ -411,6 +411,8 @@ class _TurnStream:
     ) -> Iterator[DatastarEvent]:
         """Set the form, then put the end of the run in the place of the reply.
 
+        The step lines of the run stay, as finished steps.
+
         The form goes first. The removal of the reply stops this stream, so
         the page does not get an event after it.
         """
@@ -422,6 +424,7 @@ class _TurnStream:
         )
         yield SSE.patch_elements(
             render_run_end(
+                tool_names=self._steps,
                 reply_text=reply_text,
                 approvals=approvals,
                 error_code=error_code,

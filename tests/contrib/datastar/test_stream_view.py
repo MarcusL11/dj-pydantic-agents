@@ -209,14 +209,20 @@ class TestStreamTurn(TestCase):
             TurnDoneEventDTO(text="Done"),
         ]
 
-        search, both, *_rest = await self.stream()
+        search, both, _form, end = await self.stream()
 
         assert search.selector == f"#{self.steps_id()}"
-        assert search.elements.count('class="djpa-step"') == 1
+        assert search.elements.count('class="djpa-step djpa-step--running"') == 1
         assert "Searching the web" in search.elements
         assert both.mode == "inner"
-        assert both.elements.count('class="djpa-step"') == 2  # noqa: PLR2004
+        assert both.elements.count("djpa-step--running") == 2  # noqa: PLR2004
         assert "Using send_mail" in both.elements
+        # The steps stay at the end of the run, as finished steps.
+        self.assert_run_end(end)
+        assert end.elements.count("djpa-step--called") == 2  # noqa: PLR2004
+        assert "Searched the web" in end.elements
+        assert "Used send_mail" in end.elements
+        assert end.elements.index("Searched the web") < end.elements.index("Done")
 
     async def test_a_new_stream_shows_the_earlier_steps(self):
         ScriptedTransport.script = [

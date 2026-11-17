@@ -84,6 +84,43 @@ class TestChatTemplate(SimpleTestCase):
         assert "djpa-reply" not in html
 
 
+def render_tool_line(*, kind: str, text: str, tool_name: str) -> str:
+    return render_to_string(
+        "dj_pydantic_agents/transcript_line.html",
+        {"kind": kind, "text": text, "tool_name": tool_name},
+    ).strip()
+
+
+class TestToolLines(SimpleTestCase):
+    def test_a_web_search_call_is_a_closed_block_with_its_data(self):
+        html = render_tool_line(
+            kind="tool_call",
+            text='{"query":"Rolex"}',
+            tool_name="web_search",
+        )
+
+        assert html.startswith('<details class="djpa-line djpa-line--tool-call">')
+        assert " open" not in html
+        assert "Searched the web</summary>" in html
+        assert "{&quot;query&quot;:&quot;Rolex&quot;}" in html
+
+    def test_another_tool_call_and_its_result_name_the_tool(self):
+        call = render_tool_line(
+            kind="tool_call",
+            text="{}",
+            tool_name="send_mail",
+        )
+        result = render_tool_line(
+            kind="tool_result",
+            text="sent",
+            tool_name="send_mail",
+        )
+
+        assert "Used send_mail</summary>" in call
+        assert result.startswith('<details class="djpa-line djpa-line--tool-result">')
+        assert "Result of send_mail</summary>" in result
+
+
 class TestTemplateOverride(SimpleTestCase):
     def test_a_project_template_at_the_same_path_wins(self):
         with override_settings(

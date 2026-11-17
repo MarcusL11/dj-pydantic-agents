@@ -1,15 +1,8 @@
-{% load i18n %}
 {% comment %}
-The steps of a run while it streams: one line for each tool call. The
-context: tool_names, in the order of the calls. To change the words, put a
-template at this path in the project.
+The steps of a run: one line for each tool call. The context: tool_names, in
+the order of the calls, and state. The state is "running" while the reply
+streams, and "called" at the end of the run. tool_label.html has the words.
 {% endcomment %}
 {% for tool_name in tool_names %}
-  <div class="djpa-step">
-    {% if tool_name == "web_search" %}
-      {% translate "Searching the web" %}
-    {% else %}
-      {% blocktranslate %}Using {{ tool_name }}{% endblocktranslate %}
-    {% endif %}
-  </div>
+  <div class="djpa-step djpa-step--{{ state }}">{% include "dj_pydantic_agents/tool_label.html" with tool_name=tool_name state=state only %}</div>
 {% endfor %}

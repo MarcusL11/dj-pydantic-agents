@@ -1,0 +1,8 @@
+{% load i18n %}{% comment %}
+The words for a tool. The context: tool_name and state. The state is
+"running" for a step line while the reply streams, "called" for a finished
+call and "result" for the result of a call. To change the words, put a
+template at this path in the project. Keep the file on one line after the
+comment, with no newline at the end, so that the words have no space after
+them.
+{% endcomment %}{% if state == "running" %}{% if tool_name == "web_search" %}{% translate "Searching the web" %}{% else %}{% blocktranslate %}Using {{ tool_name }}{% endblocktranslate %}{% endif %}{% elif state == "called" %}{% if tool_name == "web_search" %}{% translate "Searched the web" %}{% else %}{% blocktranslate %}Used {{ tool_name }}{% endblocktranslate %}{% endif %}{% else %}{% blocktranslate %}Result of {{ tool_name }}{% endblocktranslate %}{% endif %}

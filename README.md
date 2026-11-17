@@ -148,13 +148,13 @@ Then the page uses `<c-agent-chat :page="page" />`.
 
 ### Templates and class names
 
-The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_steps.html` holds the words of the step line that a tool call shows while the reply streams. To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
 
 The package has no CSS. Style these classes:
 
 - `djpa-chat`, `djpa-chat__scroll` (the scroll pane), `djpa-transcript`
-- `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__tool`, `djpa-line__data`
-- `djpa-reply`, `djpa-reply__steps`, `djpa-step`, `djpa-reply__text`
+- `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__summary`, `djpa-line__data`. A tool line is a closed `<details>` element.
+- `djpa-reply`, `djpa-reply__steps`, `djpa-step` with `djpa-step--running` or `djpa-step--called`, `djpa-reply__text`
 - `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
 - `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
 

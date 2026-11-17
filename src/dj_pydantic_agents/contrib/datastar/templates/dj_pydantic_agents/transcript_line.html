@@ -1,22 +1,23 @@
 {% load i18n djpa %}
 {% comment %}
 One line of the transcript. The context: kind (user, assistant, tool_call,
-tool_result or error), text and tool_name.
+tool_result or error), text and tool_name. A tool line is a closed details
+element: the summary shows the words, and the user opens it to see the data.
 {% endcomment %}
 {% if kind == "user" %}
   <div class="djpa-line djpa-line--user">{{ text|linebreaksbr }}</div>
 {% elif kind == "assistant" %}
   <div class="djpa-line djpa-line--assistant">{{ text|djpa_reply_html }}</div>
 {% elif kind == "tool_call" %}
-  <div class="djpa-line djpa-line--tool-call">
-    <span class="djpa-line__tool">{{ tool_name }}</span>
+  <details class="djpa-line djpa-line--tool-call">
+    <summary class="djpa-line__summary">{% include "dj_pydantic_agents/tool_label.html" with tool_name=tool_name state="called" only %}</summary>
     <pre class="djpa-line__data">{{ text }}</pre>
-  </div>
+  </details>
 {% elif kind == "tool_result" %}
-  <div class="djpa-line djpa-line--tool-result">
-    <span class="djpa-line__tool">{{ tool_name }}</span>
+  <details class="djpa-line djpa-line--tool-result">
+    <summary class="djpa-line__summary">{% include "dj_pydantic_agents/tool_label.html" with tool_name=tool_name state="result" only %}</summary>
     <pre class="djpa-line__data">{{ text }}</pre>
-  </div>
+  </details>
 {% elif kind == "error" %}
   <div class="djpa-line djpa-line--error">{{ text }}</div>
 {% endif %}

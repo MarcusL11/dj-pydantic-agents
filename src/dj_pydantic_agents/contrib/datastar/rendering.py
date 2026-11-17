@@ -40,7 +40,10 @@ def render_reply(*, turn_id: str) -> str:
 
 
 def render_tool_steps(*, tool_names: Sequence[str]) -> str:
-    return _render(f"{TEMPLATES}/tool_steps.html", {"tool_names": tool_names})
+    return _render(
+        f"{TEMPLATES}/tool_steps.html",
+        {"tool_names": tool_names, "state": "running"},
+    )
 
 
 def render_reply_text(*, text: str, sanitizer: ReplySanitizer) -> str:
@@ -49,6 +52,7 @@ def render_reply_text(*, text: str, sanitizer: ReplySanitizer) -> str:
 
 def render_run_end(
     *,
+    tool_names: Sequence[str] = (),
     reply_text: str = "",
     approvals: Sequence[ApprovalProjectionDTO] = (),
     error_code: str = "",
@@ -57,6 +61,7 @@ def render_run_end(
     return _render(
         f"{TEMPLATES}/run_end.html",
         {
+            "tool_names": tool_names,
             "reply_text": reply_text,
             "approvals": approvals,
             "error_code": error_code,
