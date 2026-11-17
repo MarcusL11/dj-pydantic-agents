@@ -6,8 +6,10 @@ dotted paths of the extension points.
 """
 
 from typing import TYPE_CHECKING
+from typing import Any
 
 from django.utils.module_loading import import_string
+from pydantic_ai.usage import UsageLimits
 
 from dj_pydantic_agents.conf import load_settings
 from dj_pydantic_agents.kit.runner import TurnRunner
@@ -26,6 +28,8 @@ from dj_pydantic_agents.services.conversation_query_service import (
 from dj_pydantic_agents.services.turn_run_service import TurnRunService
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from dj_pydantic_agents.dtos.turn_commands import UserId
     from dj_pydantic_agents.extensions import DepsFactory
     from dj_pydantic_agents.extensions import EventTransport
@@ -63,6 +67,7 @@ def build_turn_run_service() -> TurnRunService:
         model_factory=import_string(settings.model_factory)(),
         transport=build_event_transport(),
         runner=TurnRunner(),
+        usage_limits=_usage_limits(settings.usage_limits),
     )
 
 
@@ -78,6 +83,10 @@ def build_reply_sanitizer() -> ReplySanitizer:
 
 def specs_by_name(path: str) -> dict[str, AgentSpec]:
     return {spec.name: spec for spec in import_string(path)()}
+
+
+def _usage_limits(values: Mapping[str, Any] | None) -> UsageLimits | None:
+    return None if values is None else UsageLimits(**values)
 
 
 def _deps_factory(path: str | None) -> DepsFactory:

@@ -3,6 +3,8 @@ from pathlib import Path
 from django.template.loader import render_to_string
 from django.test import override_settings
 from django.urls import reverse
+from unittest_parametrize import param
+from unittest_parametrize import parametrize
 
 from dj_pydantic_agents.contrib.datastar.rendering import render_message_form
 from dj_pydantic_agents.contrib.datastar.rendering import render_transcript_line
@@ -119,6 +121,24 @@ class TestToolLines(SimpleTestCase):
         assert "Used send_mail</summary>" in call
         assert result.startswith('<details class="djpa-line djpa-line--tool-result">')
         assert "Result of send_mail</summary>" in result
+
+
+class TestToolLabel(SimpleTestCase):
+    @parametrize(
+        ("state", "label"),
+        [
+            param("running", "Delegating a task", id="running"),
+            param("called", "Delegated a task", id="called"),
+            param("result", "Result of a task", id="result"),
+        ],
+    )
+    def test_a_delegated_task_has_its_own_words(self, state, label):
+        html = render_to_string(
+            "dj_pydantic_agents/tool_label.html",
+            {"tool_name": "delegate_task", "state": state},
+        )
+
+        assert html == label
 
 
 class TestTemplateOverride(SimpleTestCase):

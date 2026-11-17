@@ -1,6 +1,7 @@
 from unittest.mock import create_autospec
 
 from pydantic_ai.exceptions import ModelAPIError
+from pydantic_ai.usage import UsageLimits
 
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import FailTurnCommandDTO
@@ -58,7 +59,7 @@ class TestTurnRunService(SimpleTestCase):
     def build_deps(self, **kwargs):
         self.deps_calls.append(kwargs)
 
-    def run_turn(self):
+    def run_turn(self, *, usage_limits=None):
         TurnRunService(
             repository=self.repository,
             specs={"assistant": ASSISTANT_SPEC},
@@ -66,6 +67,7 @@ class TestTurnRunService(SimpleTestCase):
             model_factory=self.model_factory,
             transport=FakeTransport(),
             runner=TurnRunner(),
+            usage_limits=usage_limits,
         ).run_turn(command=RunTurnCommandDTO(turn_id=TURN_ID))
 
     def saved_command(self):
@@ -200,6 +202,12 @@ class TestTurnRunService(SimpleTestCase):
             self.run_turn()
 
         self.assert_failed(error_code="model_api_error")
+
+    def test_the_usage_limits_apply_to_the_run(self):
+        with self.assertLogs("dj_pydantic_agents", level="ERROR"):
+            self.run_turn(usage_limits=UsageLimits(request_limit=0))
+
+        self.assert_failed(error_code="usage_limit")
 
     def test_a_save_error_fails_the_turn(self):
         self.repository.save_turn_result.side_effect = TurnStateConflict("Not running")
