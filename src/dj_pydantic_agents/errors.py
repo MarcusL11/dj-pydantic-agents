@@ -47,3 +47,15 @@ class AgentNotFound(DjPydanticAgentsError):  # noqa: N818
 
 class AgentAccessDenied(DjPydanticAgentsError):  # noqa: N818
     """The permission extension point does not let this user use the agent."""
+
+
+class AttachmentRefused(DjPydanticAgentsError):  # noqa: N818
+    """The chat does not take this file. The message tells the user why."""
+
+
+class AttachmentNotPending(DjPydanticAgentsError):  # noqa: N818
+    """A file of the message expired, was sent, or belongs to another user."""
+
+
+class AttachmentNotFound(DjPydanticAgentsError):  # noqa: N818
+    """The file does not exist, or another user owns its conversation."""

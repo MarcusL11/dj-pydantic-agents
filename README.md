@@ -16,10 +16,10 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 
 ## Install
 
-Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
+Install the package from PyPI. Select the extras that the project uses: `celery`, `codex`, `datastar` and `images`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.6.0"
+uv add "dj-pydantic-agents[celery,codex,datastar,images]==0.7.0"
 ```
 
 ## Usage limits
@@ -34,6 +34,46 @@ DJ_PYDANTIC_AGENTS = {
 ```
 
 A resume after approvals is a new run, so it gets the full limits again. The Harness `SubAgents` capability adds the usage of each child to the run by default. Then the limits also cover the children. The check `dj_pydantic_agents.E007` fails when `UsageLimits` does not accept the value.
+
+## Attachments
+
+A user can attach files to a message: images, PDF, Word and Excel. The model gets the bytes of each file, as `BinaryContent`. The package does not change a file to text.
+
+The chat takes no files by default. Set the media types to turn the files on:
+
+```python
+from dj_pydantic_agents.kit.file_checks import SUPPORTED_MEDIA_TYPES
+
+DJ_PYDANTIC_AGENTS = {
+    ...,
+    "ATTACHMENT_TYPES": SUPPORTED_MEDIA_TYPES,  # PNG, JPEG, WebP, GIF, PDF, DOC, DOCX, XLS, XLSX
+    "ATTACHMENT_STORAGE": "default",  # An alias of STORAGES. Use private storage.
+    "ATTACHMENT_MAX_FILES": 5,  # For each message.
+    "ATTACHMENT_MAX_FILE_BYTES": 10 * 1024 * 1024,
+    "ATTACHMENT_MAX_MESSAGE_BYTES": 20 * 1024 * 1024,
+    "ATTACHMENT_HISTORY_TURNS": 2,  # The latest turns, with the current turn.
+    "PENDING_ATTACHMENT_SECONDS": 3600,  # An unsent file expires after this time.
+}
+```
+
+The flow has two steps:
+
+1. The user picks, pastes or drops files. The upload view checks each file and stores it. The file is then pending: it has a row with no turn.
+2. The send of the message takes the pending files of the user. An expired file stops the send, and the form shows an error.
+
+The checks:
+
+- The suffix of the name must agree with the first bytes of the file. A DOCX or an XLSX must have its main part.
+- With the extra `images` (Pillow), an image over 5 MB gets a size of 2048 px at most. A PNG that is still too large changes to JPEG. Without Pillow, an image stays as it is.
+- The upload view refuses a request over `ATTACHMENT_MAX_MESSAGE_BYTES` plus 1 MB before it reads the files. Set a body limit in the proxy too.
+
+The stored history holds no file bytes. Before each run, the worker reads the files of the latest `ATTACHMENT_HISTORY_TURNS` turns from the storage. An older file stays out of the request, and its label tells the model that.
+
+A delete of a conversation deletes its files. Pending files that nobody sends need a cleanup. Schedule the Celery task `dj_pydantic_agents.delete_pending_attachments`, for example each hour. A project with no Celery Beat can run the command `manage.py djpa_delete_pending_attachments`.
+
+The file view gives a file only to the owner of its conversation. Images and PDF files open in the browser. Other files download.
+
+The checks `dj_pydantic_agents.E008` and `E009` fail for an unknown media type, or for an alias that is not in `STORAGES`.
 
 ## Celery
 
@@ -161,7 +201,7 @@ Then the page uses `<c-agent-chat :page="page" />`.
 
 ### Templates and class names
 
-The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". It also has words for `delegate_task`, the tool of the Harness `SubAgents` capability: "Delegating a task", "Delegated a task" and "Result of a task". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html`, `message_form.html`, `attachments.html`, `file_card.html` and `csrf_option.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". It also has words for `delegate_task`, the tool of the Harness `SubAgents` capability: "Delegating a task", "Delegated a task" and "Result of a task". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`. Each Datastar POST of the templates sends the CSRF header of `csrf_option.html`. A project with a CSRF bridge for Datastar requests can replace that template with an empty file. An override of `attachments.html` must keep the partials `error` and `input`, and the IDs `djpa-attachments`, `djpa-attachments-error` and `djpa-attachment-input`.
 
 The package has no CSS. Style these classes:
 
@@ -170,6 +210,9 @@ The package has no CSS. Style these classes:
 - `djpa-reply`, `djpa-reply__steps`, `djpa-step` (a step line while the reply streams), `djpa-reply__text`
 - `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
 - `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
+- `djpa-attachments`, `djpa-attachments__list`, `djpa-attachments__item`, `djpa-attachments__remove`, `djpa-attachments__error`, `djpa-attachments__attach`, `djpa-attachments__attach-text`, `djpa-attachments__input`, `djpa-attachments__uploading`
+- `djpa-files`, `djpa-files__images`, `djpa-files__documents` (the files of a user line, before the line)
+- `djpa-file` with `djpa-file--image` or `djpa-file--document`, and `djpa-file__thumb`, `djpa-file__badge`, `djpa-file__text`, `djpa-file__name`, `djpa-file__size` (a file card, in the transcript and in the message form)
 
 A chat with a fixed size and a scroll pane needs four rules. With `column-reverse`, the browser keeps the view at the newest line, with no JavaScript:
 

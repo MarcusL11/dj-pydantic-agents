@@ -1,10 +1,41 @@
 {% load i18n djpa %}
 {% comment %}
 One line of the transcript. The context: kind (user, assistant, tool_call,
-tool_result or error), text and tool_name. A tool line is a closed details
-element: the summary shows the words, and the user opens it to see the data.
+tool_result or error), text, tool_name and files. A tool line is a closed
+details element: the summary shows the words, and the user opens it to see
+the data.
+
+The files of a user line come before the line, as links that open in a new
+tab. The images make one row, and the documents make the next row. An image
+shows its picture, with its name as the alt text. A document shows a type
+badge, its name and its size.
 {% endcomment %}
 {% if kind == "user" %}
+  {% if files %}
+    <div class="djpa-files">
+      {% with images=files|djpa_images documents=files|djpa_documents %}
+        {% if images %}
+          <ul class="djpa-files__images">
+            {% for file in images %}
+              {% url 'dj_pydantic_agents:attachment_file' file.attachment_id as file_url %}
+              <li><a class="djpa-file djpa-file--image" href="{{ file_url }}" target="_blank" rel="noopener" title="{{ file.name }}"><img src="{{ file_url }}" alt="{{ file.name }}" loading="lazy"></a></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if documents %}
+          <ul class="djpa-files__documents">
+            {% for file in documents %}
+              <li>
+                <a class="djpa-file djpa-file--document" href="{% url 'dj_pydantic_agents:attachment_file' file.attachment_id %}" target="_blank" rel="noopener" title="{{ file.name }}">
+                  {% include "dj_pydantic_agents/file_card.html" with file=file only %}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+    </div>
+  {% endif %}
   <div class="djpa-line djpa-line--user">{{ text|linebreaksbr }}</div>
 {% elif kind == "assistant" %}
   <div class="djpa-line djpa-line--assistant">{{ text|djpa_reply_html }}</div>

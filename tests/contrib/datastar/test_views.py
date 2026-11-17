@@ -6,6 +6,7 @@ from django.urls import reverse
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
+from tests.contrib.datastar.forms import form_is_closed
 from tests.contrib.datastar.sse import read_patches
 from tests.factories import ConversationFactory
 from tests.factories import PendingApprovalFactory
@@ -59,7 +60,7 @@ class TestSendMessage(TestCase):
         stream_url = reverse("dj_pydantic_agents:stream_turn", args=[turn.id])
         assert f"@get('{stream_url}'" in reply.elements
         assert (form.selector, form.mode) == ("#djpa-message-form", "replace")
-        assert "disabled" in form.elements
+        assert form_is_closed(form.elements)
 
     async def test_a_failed_enqueue_shows_the_error_and_an_open_form(self):
         with mock.patch.object(
@@ -76,7 +77,7 @@ class TestSendMessage(TestCase):
         assert "djpa-line--user" in line.elements
         assert "djpa-line--error" in error.elements
         assert "enqueue_failed" in error.elements
-        assert "disabled" not in form.elements
+        assert not form_is_closed(form.elements)
 
     async def test_an_empty_message_is_a_bad_request(self):
         response = await self.send("   ")

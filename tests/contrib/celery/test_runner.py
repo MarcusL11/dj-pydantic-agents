@@ -8,7 +8,9 @@ import tests.celery_app  # noqa: F401 - the Celery app that runs the tasks
 from dj_pydantic_agents.composition import build_conversation_command_service
 from dj_pydantic_agents.contrib.celery import tasks
 from dj_pydantic_agents.contrib.celery.runner import CeleryTaskRunner
+from dj_pydantic_agents.contrib.celery.tasks import DELETE_PENDING_ATTACHMENTS_TASK_NAME
 from dj_pydantic_agents.contrib.celery.tasks import TASK_NAME
+from dj_pydantic_agents.contrib.celery.tasks import delete_pending_attachments_task
 from dj_pydantic_agents.contrib.celery.tasks import run_turn_task
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
@@ -108,3 +110,18 @@ class TestCeleryTurnFlow(TransactionTestCase):
         turn = Turn.objects.get(conversation_id=self.conversation.conversation_id)
         assert turn.status == Turn.Status.FAILED
         assert turn.error_code == "enqueue_failed"
+
+
+class TestDeletePendingAttachmentsTask(SimpleTestCase):
+    def test_the_task_deletes_the_expired_files(self):
+        with mock.patch.object(
+            tasks.entry,
+            "delete_expired_attachments",
+            autospec=True,
+        ) as delete:
+            delete_pending_attachments_task.delay()
+
+        delete.assert_called_once_with()
+        assert (
+            delete_pending_attachments_task.name == DELETE_PENDING_ATTACHMENTS_TASK_NAME
+        )

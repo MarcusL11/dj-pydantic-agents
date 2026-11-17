@@ -1,0 +1,11 @@
+{% load djpa %}
+{% comment %}
+The inside of a file card. The context: file, and file_url for a thumbnail.
+An image with a file_url shows a thumbnail. Other files show a type badge,
+for example PDF. Then the name and the size follow.
+{% endcomment %}
+{% if file.is_image and file_url %}<img class="djpa-file__thumb" src="{{ file_url }}" alt="" loading="lazy">{% else %}<span class="djpa-file__badge">{{ file.media_type|djpa_file_badge }}</span>{% endif %}
+<span class="djpa-file__text">
+  <span class="djpa-file__name">{{ file.name }}</span>
+  {% if file.size %}<span class="djpa-file__size">{{ file.size|filesizeformat }}</span>{% endif %}
+</span>

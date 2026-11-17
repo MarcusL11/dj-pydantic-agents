@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from django.apps import apps
+from django.conf import settings
 from django.core.checks import Error
 from django.core.checks import register
 from django.utils.module_loading import import_string
@@ -24,6 +25,7 @@ from dj_pydantic_agents.extensions import EventTransport
 from dj_pydantic_agents.extensions import ModelFactory
 from dj_pydantic_agents.extensions import ReplySanitizer
 from dj_pydantic_agents.extensions import TaskRunner
+from dj_pydantic_agents.kit.file_checks import SUPPORTED_MEDIA_TYPES
 from dj_pydantic_agents.kit.specs import AgentSpec
 from dj_pydantic_agents.transports.redis_stream import RedisStreamTransport
 
@@ -77,6 +79,7 @@ def check_settings(
         + _redis_url_errors(configured)
         + _celery_app_errors(configured)
         + _usage_limit_errors(configured)
+        + _attachment_errors(configured)
     )
 
 
@@ -174,6 +177,23 @@ def _usage_limit_errors(configured: Mapping[str, Any]) -> list[Error]:
         UsageLimits(**values)
     except TypeError as error:
         return [_error("E007", f"USAGE_LIMITS is not valid for UsageLimits: {error}.")]
+    return []
+
+
+def _attachment_errors(configured: Mapping[str, Any]) -> list[Error]:
+    """Check the types and the storage alias when the chat takes files."""
+    media_types = tuple(configured.get("ATTACHMENT_TYPES", ()))
+    if unknown := sorted(set(media_types) - set(SUPPORTED_MEDIA_TYPES)):
+        return [
+            _error(
+                "E008",
+                f"ATTACHMENT_TYPES has types that the package cannot check: "
+                f"{', '.join(unknown)}. Use these: {', '.join(SUPPORTED_MEDIA_TYPES)}.",
+            ),
+        ]
+    alias = configured.get("ATTACHMENT_STORAGE", "default")
+    if media_types and alias not in settings.STORAGES:
+        return [_error("E009", f"ATTACHMENT_STORAGE ({alias}) is not in STORAGES.")]
     return []
 
 

@@ -21,6 +21,7 @@ from dj_pydantic_agents.kit.events import TurnFailedEventDTO
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
+from tests.contrib.datastar.forms import form_is_closed
 from tests.contrib.datastar.sse import Patch
 from tests.contrib.datastar.sse import read_patches
 from tests.contrib.datastar.transports import PAUSE
@@ -110,7 +111,7 @@ class TestStreamTurn(TestCase):
     def assert_open_form(self, patch: Patch) -> None:
         """A new form, not a morph, so that the typed text goes. It gets the focus."""
         assert (patch.selector, patch.mode) == ("#djpa-message-form", "replace")
-        assert "disabled" not in patch.elements
+        assert not form_is_closed(patch.elements)
         assert 'data-init="el.focus()"' in patch.elements
 
     def text_id(self) -> str:
@@ -271,7 +272,7 @@ class TestStreamTurn(TestCase):
         assert "djpa-line--error" in end.elements
         assert "model_api_error" in end.elements
         assert "Hel" not in end.elements
-        assert "disabled" not in form.elements
+        assert not form_is_closed(form.elements)
 
     async def test_a_new_approval_stop_opens_a_new_stream(self):
         ScriptedTransport.script = [ApprovalRequestedEventDTO(approvals=(SEND_MAIL,))]
@@ -330,7 +331,7 @@ class TestStreamTurn(TestCase):
 
         self.assert_run_end(end)
         assert "<strong>Ada</strong>" in end.elements
-        assert "disabled" not in form.elements
+        assert not form_is_closed(form.elements)
         assert ScriptedTransport.reads == []
 
     async def test_a_waiting_turn_shows_the_approval_cards(self):
@@ -348,7 +349,7 @@ class TestStreamTurn(TestCase):
         decide_url = reverse("dj_pydantic_agents:decide_approval", args=[approval.id])
         assert f"@post('{decide_url}'" in end.elements
         assert "X-CSRFToken" in end.elements
-        assert "disabled" in form.elements
+        assert form_is_closed(form.elements)
 
     async def test_a_stale_turn_fails_with_worker_lost(self):
         await self.set_turn(

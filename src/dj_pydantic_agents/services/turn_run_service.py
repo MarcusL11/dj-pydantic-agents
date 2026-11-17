@@ -8,6 +8,7 @@ import logging
 from collections.abc import Mapping
 from functools import partial
 
+from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import RunUsage
 from pydantic_ai.usage import UsageLimits
 
@@ -25,6 +26,11 @@ from dj_pydantic_agents.errors import DjPydanticAgentsError
 from dj_pydantic_agents.extensions import DepsFactory
 from dj_pydantic_agents.extensions import EventTransport
 from dj_pydantic_agents.extensions import ModelFactory
+from dj_pydantic_agents.files import AttachmentFileStore
+from dj_pydantic_agents.kit.attachments import PromptFile
+from dj_pydantic_agents.kit.attachments import user_prompt
+from dj_pydantic_agents.kit.attachments import with_file_data
+from dj_pydantic_agents.kit.attachments import without_file_data
 from dj_pydantic_agents.kit.errors import error_code_for
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
@@ -58,6 +64,8 @@ class TurnRunService:
         model_factory: ModelFactory,
         transport: EventTransport,
         runner: TurnRunner,
+        files: AttachmentFileStore,
+        attachment_history_turns: int = 2,
         usage_limits: UsageLimits | None = None,
     ) -> None:
         self._repository = repository
@@ -66,13 +74,19 @@ class TurnRunService:
         self._model_factory = model_factory
         self._transport = transport
         self._runner = runner
+        self._files = files
+        # The run sends the files of this number of latest turns to the model.
+        self._attachment_history_turns = attachment_history_turns
         # The limits of one run. A resume after approvals is a new run.
         self._usage_limits = usage_limits
 
     def run_turn(self, *, command: RunTurnCommandDTO) -> None:
         """Run a queued turn. A failure records its code and does not raise."""
         run_input = self._repository.claim_turn(
-            command=ClaimTurnCommandDTO(turn_id=command.turn_id),
+            command=ClaimTurnCommandDTO(
+                turn_id=command.turn_id,
+                history_turns=self._attachment_history_turns,
+            ),
         )
         if run_input is None:
             logger.info("Turn %s is not in the queue. Skip it.", command.turn_id)
@@ -91,12 +105,21 @@ class TurnRunService:
         *,
         run_input: TurnRunInputDTO,
     ) -> tuple[TurnSavedResultDTO, TurnEventDTO]:
-        outcome = self._run(run_input=run_input)
+        file_data = {
+            attachment.attachment_id: self._files.read(path=attachment.path)
+            for attachment in run_input.attachments
+        }
+        outcome = self._run(run_input=run_input, file_data=file_data)
         pending = outcome.pending_approvals
+        # The history keeps no file bytes. The next run reads them again.
+        new_messages = without_file_data(
+            outcome.new_messages,
+            attachment_ids=file_data.keys(),
+        )
         saved = self._repository.save_turn_result(
             command=SaveTurnResultCommandDTO(
                 turn_id=run_input.turn_id,
-                new_messages=tuple(messages_to_json(list(outcome.new_messages))),
+                new_messages=tuple(messages_to_json(new_messages)),
                 pending=pending_to_json(pending),
                 approvals=describe_pending(pending) if pending is not None else (),
                 usage=_usage(outcome.usage),
@@ -106,7 +129,12 @@ class TurnRunService:
             return saved, ApprovalRequestedEventDTO(approvals=describe_pending(pending))
         return saved, TurnDoneEventDTO(text=outcome.reply_text or "")
 
-    def _run(self, *, run_input: TurnRunInputDTO) -> TurnOutcome:
+    def _run(
+        self,
+        *,
+        run_input: TurnRunInputDTO,
+        file_data: Mapping[str, bytes],
+    ) -> TurnOutcome:
         spec = self._specs.get(run_input.agent_name)
         if spec is None:
             msg = f"No agent has the name {run_input.agent_name!r}."
@@ -125,8 +153,11 @@ class TurnRunService:
             return self._runner.run(
                 spec=spec,
                 model=model,
-                history=messages_from_json(list(run_input.history)),
-                prompt=run_input.prompt,
+                history=with_file_data(
+                    messages_from_json(list(run_input.history)),
+                    data=file_data,
+                ),
+                prompt=_prompt(run_input=run_input, file_data=file_data),
                 pending=pending_from_json(run_input.pending),
                 decisions=run_input.decisions,
                 deps=deps,
@@ -187,6 +218,29 @@ class TurnRunService:
                 error_code=error_code,
             ),
         )
+
+
+def _prompt(
+    *,
+    run_input: TurnRunInputDTO,
+    file_data: Mapping[str, bytes],
+) -> str | list[UserContent] | None:
+    """The prompt of a first run, with the files of this turn. None for a resume."""
+    if run_input.prompt is None:
+        return None
+    return user_prompt(
+        text=run_input.prompt,
+        files=[
+            PromptFile(
+                attachment_id=attachment.attachment_id,
+                name=attachment.name,
+                media_type=attachment.media_type,
+                data=file_data[attachment.attachment_id],
+            )
+            for attachment in run_input.attachments
+            if attachment.turn_id == run_input.turn_id
+        ],
+    )
 
 
 def _error_code(error: Exception) -> str:

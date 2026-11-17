@@ -6,6 +6,7 @@ from dj_pydantic_agents.dtos.conversation_queries import GetApprovalAgentQueryDT
 from dj_pydantic_agents.dtos.conversation_queries import GetConversationAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import GetTurnAgentQueryDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
+from dj_pydantic_agents.dtos.turn_commands import ConversationDeletedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
@@ -20,6 +21,7 @@ from dj_pydantic_agents.errors import AgentAccessDenied
 from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.errors import TurnNotQueued
+from dj_pydantic_agents.files import AttachmentFileStore
 from dj_pydantic_agents.permissions import StaffPermission
 from dj_pydantic_agents.repositories.conversation_query_repository import (
     ConversationQueryRepository,
@@ -59,6 +61,8 @@ DELETE_COMMAND = DeleteConversationCommandDTO(
 )
 STREAM_COMMAND = OpenTurnStreamCommandDTO(turn_id=TURN_ID, user_id=USER_ID)
 STALE_TURN_SECONDS = 1800
+PENDING_SECONDS = 3600
+FILE_PATH = "dj_pydantic_agents/attachments/cnv_1/att_1.pdf"
 DECIDE_COMMAND = DecideApprovalCommandDTO(
     approval_id=APPROVAL_ID,
     user_id=USER_ID,
@@ -77,13 +81,19 @@ class TestConversationCommandService(SimpleTestCase):
         self.permission = create_autospec(StaffPermission, instance=True)
         self.permission.can_use.return_value = True
         self.task_runner = create_autospec(FakeTaskRunner, instance=True)
+        self.files = create_autospec(AttachmentFileStore, instance=True)
+        self.repository.delete_conversation.return_value = (
+            ConversationDeletedResultDTO()
+        )
         self.service = ConversationCommandService(
             repository=self.repository,
             queries=self.queries,
             specs={"assistant": ASSISTANT_SPEC},
             permission=self.permission,
             task_runner=self.task_runner,
+            files=self.files,
             stale_turn_seconds=STALE_TURN_SECONDS,
+            pending_attachment_seconds=PENDING_SECONDS,
         )
 
     def test_creates_a_conversation_for_a_known_agent(self):
@@ -156,6 +166,15 @@ class TestConversationCommandService(SimpleTestCase):
             command=DELETE_COMMAND,
         )
 
+    def test_a_delete_removes_the_stored_files_after_the_rows(self):
+        self.repository.delete_conversation.return_value = ConversationDeletedResultDTO(
+            attachment_paths=(FILE_PATH,),
+        )
+
+        self.service.delete_conversation(command=DELETE_COMMAND)
+
+        self.files.delete.assert_called_once_with(paths=(FILE_PATH,))
+
     def test_a_missing_conversation_deletes_nothing(self):
         self.queries.get_conversation_agent.side_effect = ConversationNotFound()
 
@@ -184,7 +203,10 @@ class TestConversationCommandService(SimpleTestCase):
                 user_id=USER_ID,
             ),
         )
-        self.repository.start_turn.assert_called_once_with(command=START_COMMAND)
+        self.repository.start_turn.assert_called_once_with(
+            command=START_COMMAND,
+            pending_seconds=PENDING_SECONDS,
+        )
         self.task_runner.enqueue.assert_called_once_with(turn_id=TURN_ID)
 
     def test_a_denied_user_starts_no_turn(self):

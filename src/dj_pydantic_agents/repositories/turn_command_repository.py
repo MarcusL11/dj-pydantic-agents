@@ -9,9 +9,12 @@ from django.db.models.functions import Coalesce
 from django.db.models.functions import Now
 from django.utils import timezone
 
+from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO
+from dj_pydantic_agents.dtos.attachments import RunAttachmentDTO
 from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import ConversationCreatedResultDTO
+from dj_pydantic_agents.dtos.turn_commands import ConversationDeletedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import CreateConversationCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import DeleteConversationCommandDTO
@@ -24,13 +27,17 @@ from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
 from dj_pydantic_agents.errors import ApprovalNotPending
+from dj_pydantic_agents.errors import AttachmentNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.errors import TurnInProgress
 from dj_pydantic_agents.errors import TurnStateConflict
 from dj_pydantic_agents.models import ACTIVE_TURN_STATUSES
+from dj_pydantic_agents.models import Attachment
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
+from dj_pydantic_agents.repositories.attachment_rows import PROJECTION_FIELDS
+from dj_pydantic_agents.repositories.attachment_rows import attachment_projection
 
 TITLE_LENGTH = 80
 
@@ -70,11 +77,15 @@ class TurnCommandRepository:
             raise ConversationNotFound(msg)
 
     @transaction.atomic
-    def delete_conversation(self, *, command: DeleteConversationCommandDTO) -> None:
-        """Delete the conversation, its turns and its approvals.
+    def delete_conversation(
+        self,
+        *,
+        command: DeleteConversationCommandDTO,
+    ) -> ConversationDeletedResultDTO:
+        """Delete the conversation, its turns, its approvals and its file rows.
 
         The lock on the conversation row stops a new turn during the delete,
-        as in start_turn().
+        as in start_turn(). The caller deletes the stored files after the commit.
         """
         conversation = (
             Conversation.objects.select_for_update()  # type: ignore[misc]
@@ -90,10 +101,26 @@ class TurnCommandRepository:
         ).exists():
             msg = "The conversation has an active turn."
             raise TurnInProgress(msg)
+        paths = tuple(
+            Attachment.objects.filter(conversation_id=conversation.id).values_list(
+                "file",
+                flat=True,
+            ),
+        )
         conversation.delete()
+        return ConversationDeletedResultDTO(attachment_paths=paths)
 
     @transaction.atomic
-    def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:
+    def start_turn(
+        self,
+        *,
+        command: StartTurnCommandDTO,
+        pending_seconds: int,
+    ) -> TurnStartedResultDTO:
+        """Queue the message and bind its pending files.
+
+        A pending file older than pending_seconds is not valid.
+        """
         conversation = (
             Conversation.objects.select_for_update()  # type: ignore[misc]
             .filter(id=command.conversation_id, owner_id=command.user_id)
@@ -118,7 +145,15 @@ class TurnCommandRepository:
             prompt=command.prompt,
         )
         turn.save(force_insert=True)
-        return TurnStartedResultDTO(turn_id=turn.id, conversation_id=conversation.id)
+        return TurnStartedResultDTO(
+            turn_id=turn.id,
+            conversation_id=conversation.id,
+            attachments=_take_attachments(
+                command=command,
+                turn_id=turn.id,
+                pending_seconds=pending_seconds,
+            ),
+        )
 
     @transaction.atomic
     def claim_turn(self, *, command: ClaimTurnCommandDTO) -> TurnRunInputDTO | None:
@@ -157,6 +192,10 @@ class TurnCommandRepository:
             prompt=turn.prompt if pending is None else None,
             pending=pending,
             decisions=decisions,
+            attachments=_run_attachments(
+                turn=turn,
+                history_turns=command.history_turns,
+            ),
         )
 
     @transaction.atomic
@@ -305,6 +344,65 @@ def _locked_turn(*, turn_id: str, statuses: tuple[str, ...]) -> Turn:
         msg = f"The turn is not in one of these states: {', '.join(statuses)}."
         raise TurnStateConflict(msg)
     return turn
+
+
+def _take_attachments(
+    *,
+    command: StartTurnCommandDTO,
+    turn_id: str,
+    pending_seconds: int,
+) -> tuple[AttachmentProjectionDTO, ...]:
+    """Bind the pending files of the message to the turn.
+
+    Raise AttachmentNotPending if one file is expired, sent or not of this
+    user. The rollback then also removes the turn.
+    """
+    if not command.attachment_ids:
+        return ()
+    since = timezone.now() - timedelta(seconds=pending_seconds)
+    rows = list(
+        Attachment.objects.select_for_update()
+        .filter(
+            id__in=command.attachment_ids,
+            conversation_id=command.conversation_id,
+            uploaded_by_id=command.user_id,  # type: ignore[misc]
+            turn__isnull=True,
+            created_at__gte=since,
+        )
+        .order_by("created_at", "id")
+        .values(*PROJECTION_FIELDS),
+    )
+    if len(rows) != len(set(command.attachment_ids)):
+        msg = "A file of the message expired or was removed. Attach it again."
+        raise AttachmentNotPending(msg)
+    Attachment.objects.filter(id__in=[row["id"] for row in rows]).update(
+        turn_id=turn_id,
+    )
+    return tuple(attachment_projection(row) for row in rows)
+
+
+def _run_attachments(*, turn: Turn, history_turns: int) -> tuple[RunAttachmentDTO, ...]:
+    """The files of the latest turns of the conversation, up to this turn."""
+    turn_ids = list(
+        Turn.objects.filter(
+            conversation_id=turn.conversation_id,
+            created_at__lte=turn.created_at,
+        )
+        .order_by("-created_at", "-id")
+        .values_list("id", flat=True)[:history_turns],
+    )
+    return tuple(
+        RunAttachmentDTO(
+            attachment_id=row["id"],
+            turn_id=row["turn_id"],
+            path=row["file"],
+            name=row["name"],
+            media_type=row["media_type"],
+        )
+        for row in Attachment.objects.filter(turn_id__in=turn_ids)
+        .order_by("created_at", "id")
+        .values("id", "turn_id", "file", "name", "media_type")
+    )
 
 
 def _title_from_prompt(prompt: str) -> str:

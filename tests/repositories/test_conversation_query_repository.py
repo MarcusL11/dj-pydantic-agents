@@ -1,5 +1,7 @@
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from django.utils import timezone
 from pydantic_ai.messages import ModelRequest
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.messages import TextPart
@@ -7,6 +9,10 @@ from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.messages import UserPromptPart
 from pydantic_ai.tools import DeferredToolRequests
 
+from dj_pydantic_agents.dtos.attachments import AttachmentFileProjectionDTO
+from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO
+from dj_pydantic_agents.dtos.attachments import GetAttachmentFileQueryDTO
+from dj_pydantic_agents.dtos.attachments import GetPendingAttachmentsQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import ActiveTurnProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import AgentNameProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import ApprovalProjectionDTO
@@ -17,16 +23,22 @@ from dj_pydantic_agents.dtos.conversation_queries import GetTurnAgentQueryDTO
 from dj_pydantic_agents.dtos.conversation_queries import ListConversationsQueryDTO
 from dj_pydantic_agents.dtos.turn_streams import GetTurnSnapshotQueryDTO
 from dj_pydantic_agents.errors import ApprovalNotPending
+from dj_pydantic_agents.errors import AttachmentNotFound
 from dj_pydantic_agents.errors import ConversationNotFound
+from dj_pydantic_agents.kit.attachments import PromptFile
+from dj_pydantic_agents.kit.attachments import PromptFileRefDTO
+from dj_pydantic_agents.kit.attachments import user_prompt
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.history import pending_to_json
 from dj_pydantic_agents.kit.transcript import TranscriptLineDTO
+from dj_pydantic_agents.models import Attachment
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
 from dj_pydantic_agents.repositories.conversation_query_repository import (
     ConversationQueryRepository,
 )
+from tests.factories import AttachmentFactory
 from tests.factories import ConversationFactory
 from tests.factories import PendingApprovalFactory
 from tests.factories import TurnFactory
@@ -39,6 +51,8 @@ if TYPE_CHECKING:
 # The conversation and the active turn, then the approvals of a waiting turn.
 PAGE_QUERIES = 2
 WAITING_PAGE_QUERIES = 3
+# A transcript with files also reads the sizes of the files.
+FILE_PAGE_QUERIES = 3
 # One query with a subquery for the active turn.
 LIST_QUERIES = 1
 # The turn, then the decided approvals of a running turn, the messages of a
@@ -109,6 +123,83 @@ class TestGetConversationPage(TestCase):
             turn_id=turn.id,
             status="running",
             unsaved_prompt="How are you?",
+        )
+
+    def test_a_first_run_shows_the_files_of_its_unsaved_prompt(self):
+        turn = TurnFactory.create(
+            conversation=self.conversation,
+            status=Turn.Status.RUNNING,
+        )
+        file = AttachmentFactory.create(
+            conversation=self.conversation,
+            turn=turn,
+            name="dial.png",
+            media_type="image/png",
+            size=3,
+        )
+
+        page = self.page()
+
+        assert page.active_turn is not None
+        assert page.active_turn.unsaved_files == (
+            AttachmentProjectionDTO(
+                attachment_id=file.id,
+                name="dial.png",
+                media_type="image/png",
+                size=3,
+                is_image=True,
+            ),
+        )
+
+    def test_the_files_of_a_line_get_their_size_from_their_rows(self):
+        turn = TurnFactory.create(
+            conversation=self.conversation,
+            status=Turn.Status.DONE,
+        )
+        file = AttachmentFactory.create(
+            conversation=self.conversation,
+            turn=turn,
+            size=1403,
+        )
+        prompt = user_prompt(
+            text="Read",
+            files=(
+                PromptFile(
+                    attachment_id=file.id,
+                    name="code.pdf",
+                    media_type="application/pdf",
+                    data=b"%PDF-",
+                ),
+                PromptFile(
+                    attachment_id="att_deleted",
+                    name="old.pdf",
+                    media_type="application/pdf",
+                    data=b"%PDF-",
+                ),
+            ),
+        )
+        self.conversation.messages = messages_to_json(
+            [ModelRequest(parts=[UserPromptPart(content=prompt)])],
+        )
+        self.conversation.save(update_fields=["messages"])
+
+        with self.assertNumQueries(FILE_PAGE_QUERIES):
+            page = self.page()
+
+        assert page.lines[0].files == (
+            PromptFileRefDTO(
+                attachment_id=file.id,
+                name="code.pdf",
+                media_type="application/pdf",
+                is_image=False,
+                size=1403,
+            ),
+            PromptFileRefDTO(
+                attachment_id="att_deleted",
+                name="old.pdf",
+                media_type="application/pdf",
+                is_image=False,
+            ),
         )
 
     def test_an_approval_stop_shows_the_pending_approvals(self):
@@ -342,3 +433,89 @@ class TestGetTurnSnapshot(TestCase):
                     user_id=UserFactory.create().pk,
                 ),
             )
+
+
+PENDING_SECONDS = 3600
+
+
+class TestGetPendingAttachments(TestCase):
+    owner: User
+    conversation: Conversation
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = UserFactory.create()
+        cls.conversation = ConversationFactory.create(owner=cls.owner)
+
+    def pending(self):
+        return ConversationQueryRepository().get_pending_attachments(
+            query=GetPendingAttachmentsQueryDTO(
+                conversation_id=self.conversation.id,
+                user_id=self.owner.pk,
+                pending_seconds=PENDING_SECONDS,
+            ),
+        )
+
+    def test_lists_the_valid_pending_files_of_the_user_oldest_first(self):
+        first = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+        )
+        second = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+        )
+        expired = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+        )
+        Attachment.objects.filter(id=expired.id).update(
+            created_at=timezone.now() - timedelta(seconds=PENDING_SECONDS + 1),
+        )
+        AttachmentFactory.create(conversation=self.conversation)
+        AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+            turn=TurnFactory.create(conversation=self.conversation, status="done"),
+        )
+
+        pending = self.pending()
+
+        assert pending.conversation_id == self.conversation.id
+        assert [file.attachment_id for file in pending.attachments] == [
+            first.id,
+            second.id,
+        ]
+
+
+class TestGetAttachmentFile(TestCase):
+    owner: User
+    attachment: Attachment
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = UserFactory.create()
+        cls.attachment = AttachmentFactory.create(
+            conversation=ConversationFactory.create(owner=cls.owner),
+            name="invoice.pdf",
+        )
+
+    def get_file(self, *, user_id):
+        return ConversationQueryRepository().get_attachment_file(
+            query=GetAttachmentFileQueryDTO(
+                attachment_id=self.attachment.id,
+                user_id=user_id,
+            ),
+        )
+
+    def test_the_owner_of_the_conversation_gets_the_file(self):
+        assert self.get_file(user_id=self.owner.pk) == AttachmentFileProjectionDTO(
+            agent_name="assistant",
+            path=str(self.attachment.file),
+            name="invoice.pdf",
+            media_type="application/pdf",
+        )
+
+    def test_another_user_gets_not_found(self):
+        with self.assertRaises(AttachmentNotFound):
+            self.get_file(user_id=UserFactory.create().pk)

@@ -9,6 +9,7 @@ from unittest_parametrize import param
 from unittest_parametrize import parametrize
 
 from dj_pydantic_agents import composition
+from dj_pydantic_agents.composition import build_attachment_command_service
 from dj_pydantic_agents.composition import build_conversation_command_service
 from dj_pydantic_agents.composition import build_conversation_query_service
 from dj_pydantic_agents.composition import build_event_transport
@@ -16,6 +17,9 @@ from dj_pydantic_agents.composition import build_reply_sanitizer
 from dj_pydantic_agents.composition import build_turn_run_service
 from dj_pydantic_agents.contrib.codex.login_service import PlanLoginService
 from dj_pydantic_agents.rendering.nh3_sanitizer import Nh3Sanitizer
+from dj_pydantic_agents.services.attachment_command_service import (
+    AttachmentCommandService,
+)
 from dj_pydantic_agents.services.conversation_command_service import (
     ConversationCommandService,
 )
@@ -35,6 +39,7 @@ class TestComposition(SimpleTestCase):
         )
         assert isinstance(build_conversation_query_service(), ConversationQueryService)
         assert isinstance(build_turn_run_service(), TurnRunService)
+        assert isinstance(build_attachment_command_service(), AttachmentCommandService)
 
     def test_builds_the_transport_and_the_sanitiser_from_the_settings(self):
         assert isinstance(build_event_transport(), FakeTransport)
@@ -73,6 +78,7 @@ class TestComposition(SimpleTestCase):
             param(ConversationCommandService, id="conversation_command"),
             param(ConversationQueryService, id="conversation_query"),
             param(TurnRunService, id="turn_run"),
+            param(AttachmentCommandService, id="attachment_command"),
             param(PlanLoginService, id="plan_login"),
         ],
     )

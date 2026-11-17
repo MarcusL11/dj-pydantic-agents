@@ -4,21 +4,19 @@ from typing import Annotated
 from typing import Any
 from typing import Literal
 from typing import Self
-from uuid import UUID
 
 from pydantic import Field
 from pydantic import StringConstraints
 from pydantic import model_validator
 
+from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO  # noqa: TC001
+from dj_pydantic_agents.dtos.attachments import RunAttachmentDTO  # noqa: TC001
+from dj_pydantic_agents.dtos.shared_types import MessageJson
+from dj_pydantic_agents.dtos.shared_types import UserId
 from dj_pydantic_agents.kit.dtos import InternalDTO
 from dj_pydantic_agents.kit.events import PendingApprovalDTO  # noqa: TC001
 
-# The primary key of AUTH_USER_MODEL. Each project selects its own type. The
-# django-stubs types see only the int key of the test User model, so the
-# repositories ignore the type error of each user lookup.
-type UserId = int | str | UUID
-
-type MessageJson = dict[str, Any]
+__all__ = ["MessageJson", "UserId"]
 
 
 class CreateConversationCommandDTO(InternalDTO):
@@ -47,19 +45,31 @@ class DeleteConversationCommandDTO(InternalDTO):
     user_id: UserId
 
 
+class ConversationDeletedResultDTO(InternalDTO):
+    """The stored paths of the files of the conversation. They go after the commit."""
+
+    attachment_paths: tuple[str, ...] = ()
+
+
 class StartTurnCommandDTO(InternalDTO):
+    """The message takes the pending files of attachment_ids."""
+
     conversation_id: str
     user_id: UserId
     prompt: str = Field(min_length=1)
+    attachment_ids: tuple[str, ...] = ()
 
 
 class TurnStartedResultDTO(InternalDTO):
     turn_id: str
     conversation_id: str
+    attachments: tuple[AttachmentProjectionDTO, ...] = ()
 
 
 class ClaimTurnCommandDTO(InternalDTO):
     turn_id: str
+    # The run gets the files of this number of latest turns, with this turn.
+    history_turns: int = Field(default=2, ge=1)
 
 
 class TurnRunInputDTO(InternalDTO):
@@ -79,6 +89,8 @@ class TurnRunInputDTO(InternalDTO):
     # Each decided approval of the turn, by tool call ID. After a second stop,
     # this also holds the decisions of the first stop.
     decisions: dict[str, bool] | None
+    # The files of the latest turns, this turn included.
+    attachments: tuple[RunAttachmentDTO, ...] = ()
 
 
 class TurnUsageDTO(InternalDTO):

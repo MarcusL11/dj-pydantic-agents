@@ -1,11 +1,15 @@
-"""Conversations, their turns and the tool calls that wait for approval."""
+"""Conversations, their turns, their files and the tool calls that wait for approval."""
 
 from django.conf import settings
+from django.core.files.storage import Storage
+from django.core.files.storage import storages
 from django.db import models
 from django.utils import timezone
 
+from dj_pydantic_agents.conf import load_settings
 from dj_pydantic_agents.ids import ID_LENGTH
 from dj_pydantic_agents.ids import new_approval_id
+from dj_pydantic_agents.ids import new_attachment_id
 from dj_pydantic_agents.ids import new_conversation_id
 from dj_pydantic_agents.ids import new_turn_id
 
@@ -285,3 +289,101 @@ class PendingApproval(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tool_name} ({self.get_decision_display()})"
+
+
+def attachment_storage() -> Storage:
+    """The storage of ATTACHMENT_STORAGE.
+
+    A callable, so that the migrations do not hold the alias.
+    """
+    return storages[load_settings().attachment_storage]
+
+
+class Attachment(models.Model):
+    """A file of a user message. Pending until a message takes it.
+
+    A pending file has no turn. The send of a message sets the turn.
+    """
+
+    id = models.CharField(
+        verbose_name="identifier",
+        help_text="Prefixed ULID of this file, for example att_01m7f5c8m8x.",
+        primary_key=True,
+        max_length=ID_LENGTH,
+        default=new_attachment_id,
+        editable=False,
+    )
+    conversation = models.ForeignKey(
+        Conversation,
+        verbose_name="conversation",
+        help_text="The conversation of this file. A delete of it deletes the file.",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    turn = models.ForeignKey(
+        Turn,
+        verbose_name="turn",
+        help_text="The turn of the message with this file. Null while it is pending.",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        null=True,
+        blank=True,
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="uploaded by",
+        help_text="The user who uploaded the file.",
+        on_delete=models.CASCADE,
+        related_name="agent_attachments",
+    )
+    file = models.FileField(
+        verbose_name="file",
+        help_text="The stored file. Its name holds the ID, not the name of the user.",
+        storage=attachment_storage,
+        max_length=255,
+    )
+    name = models.CharField(
+        verbose_name="name",
+        help_text="The file name from the computer of the user.",
+        max_length=255,
+    )
+    media_type = models.CharField(
+        verbose_name="media type",
+        help_text="The checked media type, for example application/pdf.",
+        max_length=100,
+    )
+    size = models.PositiveIntegerField(
+        verbose_name="size",
+        help_text="The size of the stored file in bytes.",
+    )
+    sha256 = models.CharField(
+        verbose_name="SHA-256",
+        help_text="The SHA-256 of the stored bytes, as hex.",
+        max_length=64,
+    )
+    created_at = models.DateTimeField(
+        verbose_name="created at",
+        help_text="Time of the upload. A pending file expires after a set time.",
+        auto_now_add=True,
+    )
+
+    class Meta:
+        verbose_name = "attachment"
+        verbose_name_plural = "attachments"
+        indexes = [
+            # The pending files of one user in one conversation.
+            models.Index(
+                fields=["conversation", "uploaded_by"],
+                condition=models.Q(turn__isnull=True),
+                name="attachment_pending_idx",
+            ),
+            # The cleanup task finds the expired pending files.
+            models.Index(
+                fields=["created_at"],
+                condition=models.Q(turn__isnull=True),
+                name="attachment_pending_created_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name

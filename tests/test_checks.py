@@ -115,11 +115,19 @@ class TestCheckSettings(SimpleTestCase):
             ),
             param({"USAGE_LIMITS": {"requests": 60}}, "E007", id="usage_key"),
             param({"USAGE_LIMITS": [60]}, "E007", id="usage_type"),
+            param({"ATTACHMENT_TYPES": ("text/html",)}, "E008", id="attachment_type"),
+            param({"ATTACHMENT_STORAGE": "private"}, "E009", id="attachment_storage"),
         ],
     )
     def test_reports_a_wrong_extension_point(self, overrides, error_id):
         with override_settings(DJ_PYDANTIC_AGENTS=with_keys(**overrides)):
             assert self.check_ids() == [f"dj_pydantic_agents.{error_id}"]
+
+    def test_no_attachment_types_need_no_storage(self):
+        values = with_keys(ATTACHMENT_TYPES=(), ATTACHMENT_STORAGE="private")
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert check_settings() == []
 
     def test_accepts_usage_limits(self):
         values = with_keys(USAGE_LIMITS={"request_limit": 60})

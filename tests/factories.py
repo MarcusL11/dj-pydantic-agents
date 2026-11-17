@@ -8,6 +8,7 @@ from factory import Sequence
 from factory import SubFactory
 from factory.django import DjangoModelFactory
 
+from dj_pydantic_agents.models import Attachment
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
@@ -45,3 +46,18 @@ class PendingApprovalFactory(DjangoModelFactory[PendingApproval]):
 
     class Meta:
         model = PendingApproval
+
+
+class AttachmentFactory(DjangoModelFactory[Attachment]):
+    """A pending file. Pass turn for a sent file."""
+
+    conversation = SubFactory(ConversationFactory)
+    uploaded_by = SubFactory(UserFactory)
+    file = Sequence(lambda n: f"dj_pydantic_agents/attachments/file-{n}.pdf")
+    name = "invoice.pdf"
+    media_type = "application/pdf"
+    size = 8
+    sha256 = "0" * 64
+
+    class Meta:
+        model = Attachment

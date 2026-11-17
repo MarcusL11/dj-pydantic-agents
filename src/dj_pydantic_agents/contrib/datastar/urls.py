@@ -18,4 +18,19 @@ urlpatterns = [
         name="decide_approval",
     ),
     path("turns/<str:turn_id>/stream/", views.stream_turn, name="stream_turn"),
+    path(
+        "conversations/<str:conversation_id>/attachments/",
+        views.upload_attachments,
+        name="upload_attachments",
+    ),
+    path(
+        "attachments/<str:attachment_id>/remove/",
+        views.remove_attachment,
+        name="remove_attachment",
+    ),
+    path(
+        "attachments/<str:attachment_id>/",
+        views.attachment_file,
+        name="attachment_file",
+    ),
 ]

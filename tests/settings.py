@@ -5,6 +5,8 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 
+from dj_pydantic_agents.kit.file_checks import SUPPORTED_MEDIA_TYPES
+
 SECRET_KEY = "dj-pydantic-agents-tests-only"  # noqa: S105
 
 DEBUG = False
@@ -65,6 +67,15 @@ DJ_PYDANTIC_AGENTS: dict[str, Any] = {
     "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6380/0"),
     # A new key at each start. A project keeps its keys out of the code.
     "CODEX_TOKEN_KEYS": [Fernet.generate_key().decode()],
+    "ATTACHMENT_TYPES": SUPPORTED_MEDIA_TYPES,
+}
+
+# The attachment files stay in memory.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 # tests/celery_app.py reads these. Eager mode runs each task in the test.

@@ -1,0 +1,43 @@
+{% load i18n djpa %}
+{% comment %}
+The files of the next message, inside the message form. The context:
+attachments (the pending files), is_closed and csrf_token.
+Each chip holds a hidden "attachment" field, so that the send takes the file.
+
+The file input belongs to the form djpa-upload-form of chat.html, because a
+form cannot be inside another form. A change of the input sends the event
+djpa-upload to that form, and the form uploads the files.
+The upload view replaces this element, so the input is empty again. After an
+error, it replaces only the partials "error" and "input". An override of this
+template must keep the IDs and the two partials.
+{% endcomment %}
+{% djpa_attachment_accept as accept %}
+<div id="djpa-attachments" class="djpa-attachments">
+  {% if attachments %}
+    <ul class="djpa-attachments__list">
+      {% for file in attachments %}
+        <li id="djpa-attachment-{{ file.attachment_id }}" class="djpa-attachments__item">
+          <input type="hidden" name="attachment" value="{{ file.attachment_id }}">
+          {% url 'dj_pydantic_agents:attachment_file' file.attachment_id as file_url %}
+          {% include "dj_pydantic_agents/file_card.html" with file=file file_url=file_url only %}
+          <button type="button" class="djpa-attachments__remove" aria-label="{% blocktranslate with name=file.name %}Remove {{ name }}{% endblocktranslate %}"
+                  data-on:click="@post('{% url 'dj_pydantic_agents:remove_attachment' file.attachment_id %}', {filterSignals: {include: /^$/}, {% include "dj_pydantic_agents/csrf_option.html" %}})"{% if is_closed %} disabled{% endif %}>&times;</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% partialdef error inline %}
+    <p id="djpa-attachments-error" class="djpa-attachments__error" role="alert">{{ error }}</p>
+  {% endpartialdef %}
+  {% if accept %}
+    {% partialdef input inline %}
+      {% djpa_attachment_accept as accept %}
+      <label id="djpa-attachment-input" class="djpa-attachments__attach">
+        <span class="djpa-attachments__attach-text">{% translate "Attach files" %}</span>
+        <input type="file" name="files" form="djpa-upload-form" multiple accept="{{ accept }}" class="djpa-attachments__input"
+               data-on:change="el.files.length && el.form.dispatchEvent(new Event('djpa-upload'))"{% if is_closed %} disabled{% endif %}>
+      </label>
+    {% endpartialdef %}
+    <span class="djpa-attachments__uploading" style="display: none" data-show="$_djpaUploading">{% translate "Uploading…" %}</span>
+  {% endif %}
+</div>

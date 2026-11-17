@@ -27,6 +27,10 @@ def new_approval_id() -> str:
     return prefixed_ulid("apr")
 
 
+def new_attachment_id() -> str:
+    return prefixed_ulid("att")
+
+
 def new_plan_credential_id() -> str:
     return prefixed_ulid("pcr")
 

@@ -1,4 +1,4 @@
-"""The send, approve and stream views. Each view returns Datastar patches.
+"""The send, approve, stream and file views. Most views return Datastar patches.
 
 The project writes each full page. These views only change parts of it.
 """
@@ -12,17 +12,26 @@ from datastar_py.django import DatastarResponse
 from datastar_py.sse import DatastarEvent
 from datastar_py.sse import ServerSentEventGenerator as SSE  # noqa: N814
 from django.http import HttpResponse
+from django.http import HttpResponseNotAllowed
 from django.middleware.csrf import get_token
+from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_POST
 from pydantic import ValidationError
 
+from dj_pydantic_agents.composition import build_attachment_command_service
 from dj_pydantic_agents.composition import build_conversation_command_service
+from dj_pydantic_agents.composition import build_conversation_query_service
 from dj_pydantic_agents.composition import build_event_transport
 from dj_pydantic_agents.composition import build_reply_sanitizer
+from dj_pydantic_agents.conf import load_settings
 from dj_pydantic_agents.contrib.datastar.dtos import ApprovalDecisionPayloadDTO
 from dj_pydantic_agents.contrib.datastar.dtos import SendMessagePayloadDTO
+from dj_pydantic_agents.contrib.datastar.rendering import attachment_chip_id
 from dj_pydantic_agents.contrib.datastar.rendering import render_approval_actions
+from dj_pydantic_agents.contrib.datastar.rendering import render_attachment_error
+from dj_pydantic_agents.contrib.datastar.rendering import render_attachment_input
+from dj_pydantic_agents.contrib.datastar.rendering import render_attachments
 from dj_pydantic_agents.contrib.datastar.rendering import render_message_form
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply_text
@@ -36,12 +45,19 @@ from dj_pydantic_agents.contrib.datastar.streaming import TextReveal
 from dj_pydantic_agents.contrib.datastar.streaming import close_open_markdown
 from dj_pydantic_agents.contrib.datastar.streaming import number_blocks
 from dj_pydantic_agents.db import database_sync_to_async
+from dj_pydantic_agents.dtos.attachments import GetAttachmentFileQueryDTO
+from dj_pydantic_agents.dtos.attachments import RemoveAttachmentCommandDTO
+from dj_pydantic_agents.dtos.attachments import UploadAttachmentsCommandDTO
+from dj_pydantic_agents.dtos.attachments import UploadedFileDTO
 from dj_pydantic_agents.dtos.turn_commands import DecideApprovalCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_streams import OpenTurnStreamCommandDTO
 from dj_pydantic_agents.errors import AgentAccessDenied
 from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import ApprovalNotPending
+from dj_pydantic_agents.errors import AttachmentNotFound
+from dj_pydantic_agents.errors import AttachmentNotPending
+from dj_pydantic_agents.errors import AttachmentRefused
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.errors import DjPydanticAgentsError
 from dj_pydantic_agents.errors import TurnInProgress
@@ -57,10 +73,15 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
     from collections.abc import Iterator
 
+    from django.core.files.uploadedfile import UploadedFile
     from django.http import HttpRequest
     from django.http.response import HttpResponseBase
 
+    from dj_pydantic_agents.dtos.attachments import AttachmentContentDTO
+    from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO
+    from dj_pydantic_agents.dtos.attachments import PendingAttachmentsProjectionDTO
     from dj_pydantic_agents.dtos.conversation_queries import ApprovalProjectionDTO
+    from dj_pydantic_agents.dtos.shared_types import UserId
     from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
     from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
     from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
@@ -83,12 +104,20 @@ CATCH_UP_SECONDS = 0.05
 STREAM_SIGNAL = "_djpaStream"
 TRANSCRIPT_SELECTOR = "#djpa-transcript"
 FORM_SELECTOR = "#djpa-message-form"
+ATTACHMENTS_SELECTOR = "#djpa-attachments"
+ATTACHMENT_ERROR_SELECTOR = "#djpa-attachments-error"
+ATTACHMENT_INPUT_SELECTOR = "#djpa-attachment-input"
+# The other fields of an upload request, over the size of its files.
+FORM_OVERHEAD_BYTES = 1024 * 1024
+# A browser shows these types. It downloads the others.
+INLINE_MEDIA_TYPES = ("image/", "application/pdf")
 KEEP_ALIVE = DatastarEvent(": keep-alive\n\n")
 
 _ERROR_STATUSES: tuple[tuple[type[DjPydanticAgentsError], int], ...] = (
     (ConversationNotFound, 404),
     (AgentNotFound, 404),
     (AgentAccessDenied, 403),
+    (AttachmentNotFound, 404),
     (TurnInProgress, 409),
     (ApprovalNotPending, 409),
 )
@@ -97,32 +126,108 @@ _HANDLED_ERRORS = tuple(error_type for error_type, _ in _ERROR_STATUSES)
 
 @require_POST
 async def send_message(request: HttpRequest, conversation_id: str) -> HttpResponseBase:
-    """Start a turn. Show the message, a reply that streams, and a closed form."""
+    """Start a turn. Show the message, a reply that streams, and a closed form.
+
+    The message takes its pending files. If a file expired, no turn starts,
+    and the form shows the error.
+    """
     user = await request.auser()
     if not user.is_authenticated:
         return HttpResponse(status=403)
     try:
-        payload = SendMessagePayloadDTO(prompt=request.POST.get("prompt", ""))
+        payload = SendMessagePayloadDTO(
+            prompt=request.POST.get("prompt", ""),
+            attachment_ids=tuple(request.POST.getlist("attachment")),
+        )
     except ValidationError:
         return HttpResponse(status=400)
     command = StartTurnCommandDTO(
         conversation_id=conversation_id,
         user_id=user.pk,
         prompt=payload.prompt,
+        attachment_ids=payload.attachment_ids,
     )
     csrf_token = get_token(request)
-    message = _append(render_transcript_line(kind="user", text=payload.prompt))
     try:
         started = await database_sync_to_async(_start_turn)(command)
     except TurnNotQueued as error:
+        message = _user_line(text=payload.prompt, files=())
         return _patches(message, *_failed_turn(error, csrf_token))
+    except AttachmentNotPending as error:
+        return _patches(_attachment_error(str(error)))
     except _HANDLED_ERRORS as error:
         return _error_response(error)
     return _patches(
-        message,
+        _user_line(text=payload.prompt, files=started.attachments),
         _append(render_reply(turn_id=started.turn_id)),
         _form(conversation_id=conversation_id, is_closed=True, csrf_token=csrf_token),
     )
+
+
+@require_POST
+async def upload_attachments(
+    request: HttpRequest,
+    conversation_id: str,
+) -> HttpResponseBase:
+    """Store the files for the next message. Show all its pending files.
+
+    Django keeps a large upload in a temporary file. The size check comes
+    before the view reads the files into memory. A refused file shows an
+    error, and the pending files stay.
+    """
+    user = await request.auser()
+    if not user.is_authenticated:
+        return HttpResponse(status=403)
+    if (refused := _oversized_upload(request)) is not None:
+        return refused
+    csrf_token = get_token(request)
+    uploads = request.FILES.getlist("files")
+    if not uploads:
+        return HttpResponse(status=400)
+    try:
+        pending = await database_sync_to_async(_upload_attachments)(
+            conversation_id=conversation_id,
+            user_id=user.pk,
+            uploads=uploads,
+        )
+    except AttachmentRefused as error:
+        return _attachment_refused(str(error))
+    except _HANDLED_ERRORS as error:
+        return _error_response(error)
+    return _patches(_attachments(pending, csrf_token=csrf_token))
+
+
+@require_POST
+async def remove_attachment(
+    request: HttpRequest,
+    attachment_id: str,
+) -> HttpResponseBase:
+    """Delete a pending file. Show the pending files that stay."""
+    user = await request.auser()
+    if not user.is_authenticated:
+        return HttpResponse(status=403)
+    command = RemoveAttachmentCommandDTO(attachment_id=attachment_id, user_id=user.pk)
+    try:
+        pending = await database_sync_to_async(_remove_attachment)(command)
+    except AttachmentNotPending:
+        # The file expired or was sent. Its chip goes.
+        return _patches(SSE.remove_elements(f"#{attachment_chip_id(attachment_id)}"))
+    return _patches(_attachments(pending, csrf_token=get_token(request)))
+
+
+async def attachment_file(request: HttpRequest, attachment_id: str) -> HttpResponseBase:
+    """The bytes of a file, for its owner. A browser shows an image or a PDF."""
+    if request.method not in {"GET", "HEAD"}:
+        return HttpResponseNotAllowed(["GET", "HEAD"])
+    user = await request.auser()
+    if not user.is_authenticated:
+        return HttpResponse(status=403)
+    query = GetAttachmentFileQueryDTO(attachment_id=attachment_id, user_id=user.pk)
+    try:
+        content = await database_sync_to_async(_attachment_content)(query)
+    except _HANDLED_ERRORS as error:
+        return _error_response(error)
+    return _file_response(content)
 
 
 @require_POST
@@ -437,6 +542,34 @@ def _start_turn(command: StartTurnCommandDTO) -> TurnStartedResultDTO:
     return build_conversation_command_service().start_turn(command=command)
 
 
+def _upload_attachments(
+    *,
+    conversation_id: str,
+    user_id: UserId,
+    uploads: list[UploadedFile],
+) -> PendingAttachmentsProjectionDTO:
+    """Read the files in the sync thread, not in the event loop."""
+    command = UploadAttachmentsCommandDTO(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        files=tuple(
+            UploadedFileDTO(name=upload.name or "", data=upload.read())
+            for upload in uploads
+        ),
+    )
+    return build_attachment_command_service().upload_attachments(command=command)
+
+
+def _remove_attachment(
+    command: RemoveAttachmentCommandDTO,
+) -> PendingAttachmentsProjectionDTO:
+    return build_attachment_command_service().remove_attachment(command=command)
+
+
+def _attachment_content(query: GetAttachmentFileQueryDTO) -> AttachmentContentDTO:
+    return build_conversation_query_service().get_attachment_content(query=query)
+
+
 def _decide_approval(command: DecideApprovalCommandDTO) -> ApprovalDecidedResultDTO:
     return build_conversation_command_service().decide_approval(command=command)
 
@@ -458,6 +591,78 @@ def _failed_turn(
             csrf_token=csrf_token,
         ),
     )
+
+
+def _user_line(
+    *,
+    text: str,
+    files: tuple[AttachmentProjectionDTO, ...],
+) -> DatastarEvent:
+    return _append(render_transcript_line(kind="user", text=text, files=files))
+
+
+def _attachments(
+    pending: PendingAttachmentsProjectionDTO,
+    *,
+    csrf_token: str,
+) -> DatastarEvent:
+    """Replace the area, so that the file input is new and empty."""
+    return SSE.patch_elements(
+        render_attachments(
+            attachments=pending.attachments,
+            is_closed=False,
+            csrf_token=csrf_token,
+        ),
+        selector=ATTACHMENTS_SELECTOR,
+        mode=ElementPatchMode.REPLACE,
+    )
+
+
+def _attachment_error(message: str) -> DatastarEvent:
+    return SSE.patch_elements(
+        render_attachment_error(message=message),
+        selector=ATTACHMENT_ERROR_SELECTOR,
+        mode=ElementPatchMode.REPLACE,
+    )
+
+
+def _oversized_upload(request: HttpRequest) -> HttpResponseBase | None:
+    """A response for a request over the limit, before the view reads the files."""
+    limit = load_settings().attachment_max_message_bytes + FORM_OVERHEAD_BYTES
+    try:
+        length = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        return HttpResponse(status=400)
+    if length <= limit:
+        return None
+    megabytes = limit // (1024 * 1024)
+    return _attachment_refused(f"The upload is larger than {megabytes} MB.")
+
+
+def _attachment_refused(message: str) -> DatastarResponse:
+    """Show the error and a new, empty file input. The pending files stay."""
+    return _patches(
+        _attachment_error(message),
+        SSE.patch_elements(
+            render_attachment_input(is_closed=False),
+            selector=ATTACHMENT_INPUT_SELECTOR,
+            mode=ElementPatchMode.REPLACE,
+        ),
+    )
+
+
+def _file_response(content: AttachmentContentDTO) -> HttpResponse:
+    response = HttpResponse(content.data, content_type=content.media_type)
+    inline = content.media_type.startswith(INLINE_MEDIA_TYPES)
+    disposition = content_disposition_header(
+        as_attachment=not inline,
+        filename=content.name,
+    )
+    if disposition is not None:
+        response.headers["Content-Disposition"] = disposition
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 def _append(html: str) -> DatastarEvent:

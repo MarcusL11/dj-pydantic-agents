@@ -1,10 +1,18 @@
 """Read the conversation pages."""
 
+from datetime import timedelta
+from typing import TYPE_CHECKING
 from typing import cast
 
 from django.db.models import OuterRef
 from django.db.models import Subquery
+from django.utils import timezone
 
+from dj_pydantic_agents.dtos.attachments import AttachmentFileProjectionDTO
+from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO
+from dj_pydantic_agents.dtos.attachments import GetAttachmentFileQueryDTO
+from dj_pydantic_agents.dtos.attachments import GetPendingAttachmentsQueryDTO
+from dj_pydantic_agents.dtos.attachments import PendingAttachmentsProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import ActiveTurnProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import ActiveTurnStatus
 from dj_pydantic_agents.dtos.conversation_queries import AgentNameProjectionDTO
@@ -22,14 +30,23 @@ from dj_pydantic_agents.dtos.turn_streams import GetTurnSnapshotQueryDTO
 from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
 from dj_pydantic_agents.dtos.turn_streams import TurnStatusName
 from dj_pydantic_agents.errors import ApprovalNotPending
+from dj_pydantic_agents.errors import AttachmentNotFound
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.kit.history import messages_from_json
+from dj_pydantic_agents.kit.transcript import TranscriptLineDTO
 from dj_pydantic_agents.kit.transcript import last_reply_text
 from dj_pydantic_agents.kit.transcript import transcript_lines
 from dj_pydantic_agents.models import ACTIVE_TURN_STATUSES
+from dj_pydantic_agents.models import Attachment
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
+from dj_pydantic_agents.repositories.attachment_rows import PROJECTION_FIELDS
+from dj_pydantic_agents.repositories.attachment_rows import attachment_projection
+from dj_pydantic_agents.repositories.attachment_rows import pending_attachments
+
+if TYPE_CHECKING:
+    from dj_pydantic_agents.kit.attachments import PromptFileRefDTO
 
 
 class ConversationQueryRepository:
@@ -149,6 +166,45 @@ class ConversationQueryRepository:
             else (),
         )
 
+    def get_pending_attachments(
+        self,
+        *,
+        query: GetPendingAttachmentsQueryDTO,
+    ) -> PendingAttachmentsProjectionDTO:
+        """The files that wait for the next message, oldest first."""
+        return PendingAttachmentsProjectionDTO(
+            conversation_id=query.conversation_id,
+            attachments=pending_attachments(
+                conversation_id=query.conversation_id,
+                user_id=query.user_id,
+                since=timezone.now() - timedelta(seconds=query.pending_seconds),
+            ),
+        )
+
+    def get_attachment_file(
+        self,
+        *,
+        query: GetAttachmentFileQueryDTO,
+    ) -> AttachmentFileProjectionDTO:
+        """Only the owner of the conversation gets the file."""
+        row = (
+            Attachment.objects.filter(
+                id=query.attachment_id,
+                conversation__owner_id=query.user_id,  # type: ignore[misc]
+            )
+            .values("conversation__agent_name", "file", "name", "media_type")
+            .first()
+        )
+        if row is None:
+            msg = "The file was not found."
+            raise AttachmentNotFound(msg)
+        return AttachmentFileProjectionDTO(
+            agent_name=row["conversation__agent_name"],
+            path=row["file"],
+            name=row["name"],
+            media_type=row["media_type"],
+        )
+
     def get_conversation_page(
         self,
         *,
@@ -184,6 +240,9 @@ class ConversationQueryRepository:
                 turn_id=turn["id"],
                 status=cast("ActiveTurnStatus", turn["status"]),
                 unsaved_prompt=turn["prompt"] if first_run else None,
+                unsaved_files=_turn_attachments(turn_id=turn["id"])
+                if first_run
+                else (),
             )
             approvals = _pending_approvals(turn_id=turn["id"])
 
@@ -191,10 +250,50 @@ class ConversationQueryRepository:
             conversation_id=conversation["id"],
             agent_name=conversation["agent_name"],
             title=conversation["title"],
-            lines=transcript_lines(messages_from_json(conversation["messages"])),
+            lines=_with_file_sizes(
+                conversation_id=conversation["id"],
+                lines=transcript_lines(messages_from_json(conversation["messages"])),
+            ),
             active_turn=active_turn,
             approvals=approvals,
         )
+
+
+def _with_file_sizes(
+    *,
+    conversation_id: str,
+    lines: tuple[TranscriptLineDTO, ...],
+) -> tuple[TranscriptLineDTO, ...]:
+    """The rows give the sizes. A transcript with no file needs no query."""
+    if not any(line.files for line in lines):
+        return lines
+    sizes = dict(
+        Attachment.objects.filter(
+            conversation_id=conversation_id,
+            turn__isnull=False,
+        ).values_list("id", "size"),
+    )
+    return tuple(
+        line.model_copy(
+            update={"files": tuple(_sized(file, sizes) for file in line.files)},
+        )
+        if line.files
+        else line
+        for line in lines
+    )
+
+
+def _sized(file: PromptFileRefDTO, sizes: dict[str, int]) -> PromptFileRefDTO:
+    return file.model_copy(update={"size": sizes.get(file.attachment_id)})
+
+
+def _turn_attachments(*, turn_id: str) -> tuple[AttachmentProjectionDTO, ...]:
+    return tuple(
+        attachment_projection(row)
+        for row in Attachment.objects.filter(turn_id=turn_id)
+        .order_by("created_at", "id")
+        .values(*PROJECTION_FIELDS)
+    )
 
 
 def _pending_approvals(*, turn_id: str) -> tuple[ApprovalProjectionDTO, ...]:

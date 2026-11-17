@@ -29,6 +29,7 @@ from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import TurnNotQueued
 from dj_pydantic_agents.extensions import AgentPermission
 from dj_pydantic_agents.extensions import TaskRunner
+from dj_pydantic_agents.files import AttachmentFileStore
 from dj_pydantic_agents.kit.specs import AgentSpec
 from dj_pydantic_agents.repositories.conversation_query_repository import (
     ConversationQueryRepository,
@@ -54,14 +55,18 @@ class ConversationCommandService:
         specs: Mapping[str, AgentSpec],
         permission: AgentPermission,
         task_runner: TaskRunner,
+        files: AttachmentFileStore,
         stale_turn_seconds: int,
+        pending_attachment_seconds: int,
     ) -> None:
         self._repository = repository
         self._queries = queries
         self._specs = specs
         self._permission = permission
         self._task_runner = task_runner
+        self._files = files
         self._stale_turn_seconds = stale_turn_seconds
+        self._pending_attachment_seconds = pending_attachment_seconds
 
     def create_conversation(
         self,
@@ -79,20 +84,31 @@ class ConversationCommandService:
         self._repository.rename_conversation(command=command)
 
     def delete_conversation(self, *, command: DeleteConversationCommandDTO) -> None:
-        """Delete an idle conversation. An active turn raises TurnInProgress."""
+        """Delete an idle conversation and its files.
+
+        An active turn raises TurnInProgress.
+        """
         self._check_conversation_access(
             conversation_id=command.conversation_id,
             user_id=command.user_id,
         )
-        self._repository.delete_conversation(command=command)
+        deleted = self._repository.delete_conversation(command=command)
+        self._files.delete(paths=deleted.attachment_paths)
 
     def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:
-        """Queue the message as a new turn, then give the turn to the task runner."""
+        """Queue the message as a new turn, then give the turn to the task runner.
+
+        The turn takes the pending files of the message. An expired file raises
+        AttachmentNotPending, and no turn starts.
+        """
         self._check_conversation_access(
             conversation_id=command.conversation_id,
             user_id=command.user_id,
         )
-        result = self._repository.start_turn(command=command)
+        result = self._repository.start_turn(
+            command=command,
+            pending_seconds=self._pending_attachment_seconds,
+        )
         self._enqueue(turn_id=result.turn_id, conversation_id=result.conversation_id)
         return result
 

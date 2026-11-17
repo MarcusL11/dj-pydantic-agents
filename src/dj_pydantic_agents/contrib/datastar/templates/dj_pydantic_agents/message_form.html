@@ -1,11 +1,16 @@
 {% load i18n %}
 {% comment %}
-The message form. The context: conversation_id, is_closed, csrf_token and
-focus. The form is closed while a turn is active. With focus, the input gets
-the focus when the form opens again after a run.
+The message form. The context: conversation_id, is_closed, csrf_token, focus
+and attachments (the pending files). The form is closed while a turn is
+active. With focus, the input gets the focus when the form opens again after
+a run. A paste or a drop of files uploads them, as the file input does.
 {% endcomment %}
 <form id="djpa-message-form" class="djpa-message-form"
-      data-on:submit="@post('{% url 'dj_pydantic_agents:send_message' conversation_id %}', {contentType: 'form', headers: {'X-CSRFToken': '{{ csrf_token }}'}})">
-  <textarea name="prompt" class="djpa-message-form__input" required{% if is_closed %} disabled{% endif %}{% if focus %} data-init="el.focus()"{% endif %}></textarea>
-  <button type="submit" class="djpa-message-form__send"{% if is_closed %} disabled{% endif %}>{% translate "Send" %}</button>
+      data-on:submit="@post('{% url 'dj_pydantic_agents:send_message' conversation_id %}', {contentType: 'form', {% include "dj_pydantic_agents/csrf_option.html" %}})"
+      data-on:dragover="evt.dataTransfer?.types.includes('Files') && evt.preventDefault()"
+      data-on:drop="const input = el.querySelector('.djpa-attachments__input'); if (input && !input.disabled && evt.dataTransfer?.files.length) { evt.preventDefault(); input.files = evt.dataTransfer.files; input.dispatchEvent(new Event('change')) }">
+  {% include "dj_pydantic_agents/attachments.html" with attachments=attachments is_closed=is_closed csrf_token=csrf_token only %}
+  <textarea name="prompt" class="djpa-message-form__input" required{% if is_closed %} disabled{% endif %}{% if focus %} data-init="el.focus()"{% endif %}
+            data-on:paste="const input = el.form.querySelector('.djpa-attachments__input'); const data = evt.clipboardData; if (input && data?.files.length && !data.types.includes('text/plain')) { evt.preventDefault(); input.files = data.files; input.dispatchEvent(new Event('change')) }"></textarea>
+  <button type="submit" class="djpa-message-form__send"{% if is_closed %} disabled{% else %} data-attr:disabled="$_djpaUploading"{% endif %}>{% translate "Send" %}</button>
 </form>

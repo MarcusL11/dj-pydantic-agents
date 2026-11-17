@@ -23,18 +23,21 @@ from dj_pydantic_agents.dtos.turn_commands import SaveTurnResultCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnUsageDTO
 from dj_pydantic_agents.errors import ApprovalNotPending
+from dj_pydantic_agents.errors import AttachmentNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.errors import TurnInProgress
 from dj_pydantic_agents.errors import TurnStateConflict
 from dj_pydantic_agents.kit.events import PendingApprovalDTO
 from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.history import pending_to_json
+from dj_pydantic_agents.models import Attachment
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
 from dj_pydantic_agents.repositories.turn_command_repository import (
     TurnCommandRepository,
 )
+from tests.factories import AttachmentFactory
 from tests.factories import ConversationFactory
 from tests.factories import PendingApprovalFactory
 from tests.factories import TurnFactory
@@ -153,7 +156,7 @@ class TestDeleteConversation(TestCase):
         cls.conversation = ConversationFactory.create(owner=cls.owner)
 
     def delete(self, *, user_id: int | None = None):
-        TurnCommandRepository().delete_conversation(
+        return TurnCommandRepository().delete_conversation(
             command=DeleteConversationCommandDTO(
                 conversation_id=self.conversation.id,
                 user_id=self.owner.pk if user_id is None else user_id,
@@ -177,6 +180,20 @@ class TestDeleteConversation(TestCase):
         assert list(Conversation.objects.values_list("id", flat=True)) == [kept.id]
         assert not Turn.objects.exists()
         assert not PendingApproval.objects.exists()
+
+    def test_returns_the_paths_of_the_deleted_files(self):
+        turn = TurnFactory.create(
+            conversation=self.conversation,
+            status=Turn.Status.DONE,
+        )
+        sent = AttachmentFactory.create(conversation=self.conversation, turn=turn)
+        pending = AttachmentFactory.create(conversation=self.conversation)
+        kept = AttachmentFactory.create()
+
+        deleted = self.delete()
+
+        assert set(deleted.attachment_paths) == {str(sent.file), str(pending.file)}
+        assert list(Attachment.objects.values_list("id", flat=True)) == [kept.id]
 
     @parametrize(
         "status",
@@ -208,6 +225,9 @@ class TestDeleteConversation(TestCase):
         assert Conversation.objects.filter(id=self.conversation.id).exists()
 
 
+PENDING_SECONDS = 3600
+
+
 class TestStartTurn(TestCase):
     owner: User
     conversation: Conversation
@@ -217,13 +237,92 @@ class TestStartTurn(TestCase):
         cls.owner = UserFactory.create()
         cls.conversation = ConversationFactory.create(owner=cls.owner)
 
-    def start(self, *, prompt: str = "Hi", user_id: int | None = None):
+    def start(
+        self,
+        *,
+        prompt: str = "Hi",
+        user_id: int | None = None,
+        attachment_ids: tuple[str, ...] = (),
+    ):
         return TurnCommandRepository().start_turn(
             command=StartTurnCommandDTO(
                 conversation_id=self.conversation.id,
                 user_id=self.owner.pk if user_id is None else user_id,
                 prompt=prompt,
+                attachment_ids=attachment_ids,
             ),
+            pending_seconds=PENDING_SECONDS,
+        )
+
+    def test_the_turn_takes_the_pending_files_of_the_message(self):
+        first = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+            name="a.pdf",
+        )
+        second = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+            name="b.png",
+            media_type="image/png",
+        )
+
+        result = self.start(attachment_ids=(second.id, first.id))
+
+        assert [file.name for file in result.attachments] == ["a.pdf", "b.png"]
+        assert [file.is_image for file in result.attachments] == [False, True]
+        assert set(
+            Attachment.objects.filter(turn_id=result.turn_id).values_list(
+                "id",
+                flat=True,
+            ),
+        ) == {first.id, second.id}
+
+    @parametrize(
+        "case",
+        [
+            ("expired",),
+            ("sent",),
+            ("other_user",),
+            ("other_conversation",),
+            ("missing",),
+        ],
+    )
+    def test_a_file_that_is_not_pending_starts_no_turn(self, case):
+        attachment = AttachmentFactory.create(
+            conversation=self.conversation,
+            uploaded_by=self.owner,
+        )
+        attachment_id = attachment.id
+        match case:
+            case "expired":
+                Attachment.objects.filter(id=attachment.id).update(
+                    created_at=timezone.now() - timedelta(seconds=PENDING_SECONDS + 1),
+                )
+            case "sent":
+                Attachment.objects.filter(id=attachment.id).update(
+                    turn=TurnFactory.create(
+                        conversation=self.conversation,
+                        status=Turn.Status.DONE,
+                    ),
+                )
+            case "other_user":
+                Attachment.objects.filter(id=attachment.id).update(
+                    uploaded_by=UserFactory.create(),
+                )
+            case "other_conversation":
+                Attachment.objects.filter(id=attachment.id).update(
+                    conversation=ConversationFactory.create(owner=self.owner),
+                )
+            case "missing":
+                attachment_id = "att_missing"
+        turns_before = Turn.objects.filter(conversation=self.conversation).count()
+
+        with self.assertRaises(AttachmentNotPending):
+            self.start(attachment_ids=(attachment_id,))
+
+        assert (
+            Turn.objects.filter(conversation=self.conversation).count() == turns_before
         )
 
     def test_queues_a_turn_and_keeps_the_messages(self):
@@ -315,10 +414,48 @@ class TestClaimTurn(TestCase):
             prompt="Mail Ada",
         )
 
-    def claim(self):
+    def claim(self, *, history_turns: int = 2):
         return TurnCommandRepository().claim_turn(
-            command=ClaimTurnCommandDTO(turn_id=self.turn.id),
+            command=ClaimTurnCommandDTO(
+                turn_id=self.turn.id,
+                history_turns=history_turns,
+            ),
         )
+
+    def test_a_run_gets_the_files_of_the_latest_turns(self):
+        old_turn = TurnFactory.create(conversation=self.conversation, status="done")
+        recent_turn = TurnFactory.create(conversation=self.conversation, status="done")
+        Turn.objects.filter(id=old_turn.id).update(
+            created_at=timezone.now() - timedelta(minutes=2),
+        )
+        Turn.objects.filter(id=recent_turn.id).update(
+            created_at=timezone.now() - timedelta(minutes=1),
+        )
+        Turn.objects.filter(id=self.turn.id).update(created_at=timezone.now())
+        AttachmentFactory.create(conversation=self.conversation, turn=old_turn)
+        recent = AttachmentFactory.create(
+            conversation=self.conversation,
+            turn=recent_turn,
+        )
+        current = AttachmentFactory.create(
+            conversation=self.conversation,
+            turn=self.turn,
+            name="dial.png",
+            media_type="image/png",
+        )
+        AttachmentFactory.create(conversation=self.conversation)
+
+        run_input = self.claim(history_turns=2)
+
+        assert run_input is not None
+        assert [
+            (file.attachment_id, file.turn_id) for file in run_input.attachments
+        ] == [
+            (recent.id, recent_turn.id),
+            (current.id, self.turn.id),
+        ]
+        assert run_input.attachments[1].path == str(current.file)
+        assert run_input.attachments[1].media_type == "image/png"
 
     def test_a_first_run_gets_the_prompt_and_the_history(self):
         run_input = self.claim()

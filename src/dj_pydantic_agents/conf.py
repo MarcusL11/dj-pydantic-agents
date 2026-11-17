@@ -33,6 +33,18 @@ DEFAULTS: Mapping[str, Any] = {
     # The keyword arguments of pydantic_ai.usage.UsageLimits for one run of a
     # turn, for example {"request_limit": 60}. None sets no limit.
     "USAGE_LIMITS": None,
+    # The storage alias of the attachment files. Use private storage.
+    "ATTACHMENT_STORAGE": "default",
+    # The media types that the chat takes. Empty: the chat takes no files.
+    "ATTACHMENT_TYPES": (),
+    # The limits of the files of one message.
+    "ATTACHMENT_MAX_FILES": 5,
+    "ATTACHMENT_MAX_FILE_BYTES": 10 * 1024 * 1024,
+    "ATTACHMENT_MAX_MESSAGE_BYTES": 20 * 1024 * 1024,
+    # The model gets the files of this number of latest turns, with the current turn.
+    "ATTACHMENT_HISTORY_TURNS": 2,
+    # An unsent file expires after this time. The cleanup task deletes it.
+    "PENDING_ATTACHMENT_SECONDS": 3600,
 }
 
 
@@ -51,6 +63,13 @@ class PackageSettings:
     stale_turn_seconds: int
     codex_token_keys: Sequence[str]
     usage_limits: Mapping[str, Any] | None
+    attachment_storage: str
+    attachment_types: Sequence[str]
+    attachment_max_files: int
+    attachment_max_file_bytes: int
+    attachment_max_message_bytes: int
+    attachment_history_turns: int
+    pending_attachment_seconds: int
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -82,4 +101,11 @@ def load_settings() -> PackageSettings:
         stale_turn_seconds=values["STALE_TURN_SECONDS"],
         codex_token_keys=values["CODEX_TOKEN_KEYS"],
         usage_limits=values["USAGE_LIMITS"],
+        attachment_storage=values["ATTACHMENT_STORAGE"],
+        attachment_types=tuple(values["ATTACHMENT_TYPES"]),
+        attachment_max_files=values["ATTACHMENT_MAX_FILES"],
+        attachment_max_file_bytes=values["ATTACHMENT_MAX_FILE_BYTES"],
+        attachment_max_message_bytes=values["ATTACHMENT_MAX_MESSAGE_BYTES"],
+        attachment_history_turns=values["ATTACHMENT_HISTORY_TURNS"],
+        pending_attachment_seconds=values["PENDING_ATTACHMENT_SECONDS"],
     )

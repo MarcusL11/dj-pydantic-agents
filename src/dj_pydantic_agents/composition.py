@@ -11,14 +11,23 @@ from typing import Any
 from django.utils.module_loading import import_string
 from pydantic_ai.usage import UsageLimits
 
+from dj_pydantic_agents.conf import PackageSettings
 from dj_pydantic_agents.conf import load_settings
+from dj_pydantic_agents.files import AttachmentFileStore
 from dj_pydantic_agents.kit.runner import TurnRunner
+from dj_pydantic_agents.repositories.attachment_command_repository import (
+    AttachmentCommandRepository,
+)
 from dj_pydantic_agents.repositories.conversation_query_repository import (
     ConversationQueryRepository,
 )
 from dj_pydantic_agents.repositories.turn_command_repository import (
     TurnCommandRepository,
 )
+from dj_pydantic_agents.services.attachment_command_service import (
+    AttachmentCommandService,
+)
+from dj_pydantic_agents.services.attachment_command_service import AttachmentRules
 from dj_pydantic_agents.services.conversation_command_service import (
     ConversationCommandService,
 )
@@ -45,7 +54,9 @@ def build_conversation_command_service() -> ConversationCommandService:
         specs=specs_by_name(settings.specs),
         permission=import_string(settings.permission)(),
         task_runner=import_string(settings.task_runner)(),
+        files=_file_store(settings),
         stale_turn_seconds=settings.stale_turn_seconds,
+        pending_attachment_seconds=settings.pending_attachment_seconds,
     )
 
 
@@ -54,6 +65,26 @@ def build_conversation_query_service() -> ConversationQueryService:
     return ConversationQueryService(
         repository=ConversationQueryRepository(),
         permission=import_string(settings.permission)(),
+        files=_file_store(settings),
+        pending_attachment_seconds=settings.pending_attachment_seconds,
+    )
+
+
+def build_attachment_command_service() -> AttachmentCommandService:
+    settings = load_settings()
+    return AttachmentCommandService(
+        repository=AttachmentCommandRepository(),
+        queries=ConversationQueryRepository(),
+        files=_file_store(settings),
+        specs=specs_by_name(settings.specs),
+        permission=import_string(settings.permission)(),
+        rules=AttachmentRules(
+            media_types=tuple(settings.attachment_types),
+            max_files=settings.attachment_max_files,
+            max_file_bytes=settings.attachment_max_file_bytes,
+            max_message_bytes=settings.attachment_max_message_bytes,
+            pending_seconds=settings.pending_attachment_seconds,
+        ),
     )
 
 
@@ -67,6 +98,8 @@ def build_turn_run_service() -> TurnRunService:
         model_factory=import_string(settings.model_factory)(),
         transport=build_event_transport(),
         runner=TurnRunner(),
+        files=_file_store(settings),
+        attachment_history_turns=settings.attachment_history_turns,
         usage_limits=_usage_limits(settings.usage_limits),
     )
 
@@ -83,6 +116,10 @@ def build_reply_sanitizer() -> ReplySanitizer:
 
 def specs_by_name(path: str) -> dict[str, AgentSpec]:
     return {spec.name: spec for spec in import_string(path)()}
+
+
+def _file_store(settings: PackageSettings) -> AttachmentFileStore:
+    return AttachmentFileStore(storage_alias=settings.attachment_storage)
 
 
 def _usage_limits(values: Mapping[str, Any] | None) -> UsageLimits | None:

@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from dj_pydantic_agents.dtos.attachments import AttachmentProjectionDTO
+from dj_pydantic_agents.dtos.attachments import RunAttachmentDTO
 from dj_pydantic_agents.dtos.conversation_queries import AgentNameProjectionDTO
 from dj_pydantic_agents.dtos.conversation_queries import ConversationPageProjectionDTO
 from dj_pydantic_agents.dtos.turn_commands import ApprovalDecidedResultDTO
@@ -14,6 +16,7 @@ CONVERSATION_ID = "cnv_01m7f5c8m8xzp0zy3vmbgzbdw9"
 TURN_ID = "trn_01m7f5c8m8xzp0zy3vmbgzbdw9"
 APPROVAL_ID = "apr_01m7f5c8m8xzp0zy3vmbgzbdw9"
 USER_ID = 7
+ATTACHMENT_ID = "att_01m7f5c8m8xzp0zy3vmbgzbdw9"
 
 
 def a_run_input(**overrides: Any) -> TurnRunInputDTO:
@@ -75,3 +78,25 @@ def a_snapshot(**overrides: Any) -> TurnSnapshotProjectionDTO:
         "decided_tool_call_ids": (),
     }
     return TurnSnapshotProjectionDTO(**{**values, **overrides})
+
+
+def an_attachment(**overrides: Any) -> AttachmentProjectionDTO:
+    values: dict[str, Any] = {
+        "attachment_id": ATTACHMENT_ID,
+        "name": "invoice.pdf",
+        "media_type": "application/pdf",
+        "size": 8,
+        "is_image": False,
+    }
+    return AttachmentProjectionDTO(**{**values, **overrides})
+
+
+def a_run_attachment(**overrides: Any) -> RunAttachmentDTO:
+    values: dict[str, Any] = {
+        "attachment_id": ATTACHMENT_ID,
+        "turn_id": TURN_ID,
+        "path": f"dj_pydantic_agents/attachments/{CONVERSATION_ID}/{ATTACHMENT_ID}.pdf",
+        "name": "invoice.pdf",
+        "media_type": "application/pdf",
+    }
+    return RunAttachmentDTO(**{**values, **overrides})
