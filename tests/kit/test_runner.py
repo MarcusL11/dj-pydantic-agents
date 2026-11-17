@@ -139,7 +139,11 @@ class TestTurnRunnerApproval(SimpleTestCase):
             part.tool_call_id for part in self.first.pending_approvals.approvals
         ] == ["call-1"]
         assert self.events == [
-            ToolCallEventDTO(tool_call_id="call-1", tool_name="send_mail"),
+            ToolCallEventDTO(
+                tool_call_id="call-1",
+                tool_name="send_mail",
+                args_json='{"to":"ada"}',
+            ),
         ]
 
     def test_approval_runs_the_tool(self):

@@ -1,8 +1,7 @@
 {% comment %}
-The steps of a run: one line for each tool call. The context: tool_names, in
-the order of the calls, and state. The state is "running" while the reply
-streams, and "called" at the end of the run. tool_label.html has the words.
+The steps of a run while the reply streams: one line for each tool call. The
+context: tool_names, in the order of the calls. tool_label.html has the words.
 {% endcomment %}
 {% for tool_name in tool_names %}
-  <div class="djpa-step djpa-step--{{ state }}">{% include "dj_pydantic_agents/tool_label.html" with tool_name=tool_name state=state only %}</div>
+  <div class="djpa-step">{% include "dj_pydantic_agents/tool_label.html" with tool_name=tool_name state="running" only %}</div>
 {% endfor %}

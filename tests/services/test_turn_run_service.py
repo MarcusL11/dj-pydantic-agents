@@ -134,7 +134,14 @@ class TestTurnRunService(SimpleTestCase):
         assert saved.pending is not None
         assert saved.approvals == (SEND_MAIL_APPROVAL,)
         assert FakeTransport.events == [
-            (TURN_ID, ToolCallEventDTO(tool_call_id="call-1", tool_name="send_mail")),
+            (
+                TURN_ID,
+                ToolCallEventDTO(
+                    tool_call_id="call-1",
+                    tool_name="send_mail",
+                    args_json='{"to":"ada"}',
+                ),
+            ),
             (TURN_ID, ApprovalRequestedEventDTO(approvals=(SEND_MAIL_APPROVAL,))),
         ]
         assert self.finished == [self.finished_event(status="waiting_approval")]

@@ -9,9 +9,11 @@ from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.messages import FunctionToolCallEvent
 from pydantic_ai.messages import NativeToolCallPart
 from pydantic_ai.messages import PartDeltaEvent
+from pydantic_ai.messages import PartEndEvent
 from pydantic_ai.messages import PartStartEvent
 from pydantic_ai.messages import TextPart
 from pydantic_ai.messages import TextPartDelta
+from pydantic_ai.messages import ToolCallPart
 
 from dj_pydantic_agents.kit.dtos import ExternalDTO
 
@@ -29,10 +31,16 @@ class TextDeltaEventDTO(ExternalDTO):
 
 
 class ToolCallEventDTO(ExternalDTO):
+    """A tool call, with its arguments as JSON.
+
+    An event from before version 0.5.1 has no arguments, so the default is "".
+    """
+
     kind: Literal["tool_call"] = "tool_call"
     version: Literal[1] = 1
     tool_call_id: str
     tool_name: str
+    args_json: str = ""
 
 
 class ApprovalRequestedEventDTO(ExternalDTO):
@@ -93,16 +101,19 @@ def to_turn_event(event: AgentStreamEvent) -> TurnEventDTO | None:
         case PartDeltaEvent(delta=TextPartDelta(content_delta=text)) if text:
             return TextDeltaEventDTO(text=text)
         case FunctionToolCallEvent(part=part):
-            return ToolCallEventDTO(
-                tool_call_id=part.tool_call_id,
-                tool_name=part.tool_name,
-            )
+            return _tool_call(part)
         # A provider runs a native tool, such as web_search, inside its own
-        # response. So no FunctionToolCallEvent comes for it.
-        case PartStartEvent(part=NativeToolCallPart() as part):
-            return ToolCallEventDTO(
-                tool_call_id=part.tool_call_id,
-                tool_name=part.tool_name,
-            )
+        # response. So no FunctionToolCallEvent comes for it. Its arguments
+        # are complete only at the end of the part.
+        case PartEndEvent(part=NativeToolCallPart() as part):
+            return _tool_call(part)
         case _:
             return None
+
+
+def _tool_call(part: ToolCallPart | NativeToolCallPart) -> ToolCallEventDTO:
+    return ToolCallEventDTO(
+        tool_call_id=part.tool_call_id,
+        tool_name=part.tool_name,
+        args_json=part.args_as_json_str(),
+    )

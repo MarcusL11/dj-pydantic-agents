@@ -210,8 +210,8 @@ class _TurnStream:
         self._text = TextReveal()
         # The blocks on the page. None: the next patch replaces the full text.
         self._blocks: tuple[str, ...] | None = None
-        # The tool name of each step line, in the order of the calls.
-        self._steps: list[str] = []
+        # The tool calls of the run, in their order. Each one shows a step line.
+        self._steps: list[ToolCallEventDTO] = []
         self._catching_up = True
         self._deadline = 0.0
 
@@ -329,8 +329,8 @@ class _TurnStream:
         match event:
             case TextDeltaEventDTO(text=text):
                 return self._add_text(text)
-            case ToolCallEventDTO(tool_name=tool_name):
-                return self._add_step(tool_name)
+            case ToolCallEventDTO():
+                return self._add_step(event)
             case TurnDoneEventDTO(text=text):
                 return self._run_end(reply_text=text)
             case TurnFailedEventDTO(error_code=error_code):
@@ -351,18 +351,15 @@ class _TurnStream:
         self._text.step()
         yield from self._text_patches()
 
-    def _add_step(self, tool_name: str) -> Iterator[DatastarEvent]:
+    def _add_step(self, call: ToolCallEventDTO) -> Iterator[DatastarEvent]:
         """Show a step line for a tool call, and replace all the steps.
 
         A replacement is safe for a new stream: it replays the steps from the
-        first event. A call of the same tool as the last step adds no line.
-        A native web search, for example, searches and then opens a page.
+        first event.
         """
-        if self._steps and self._steps[-1] == tool_name:
-            return
-        self._steps.append(tool_name)
+        self._steps.append(call)
         yield SSE.patch_elements(
-            render_tool_steps(tool_names=self._steps),
+            render_tool_steps(tool_names=[step.tool_name for step in self._steps]),
             selector=f"#{reply_steps_id(self._snapshot.turn_id)}",
             mode=ElementPatchMode.INNER,
         )
@@ -411,7 +408,8 @@ class _TurnStream:
     ) -> Iterator[DatastarEvent]:
         """Set the form, then put the end of the run in the place of the reply.
 
-        The step lines of the run stay, as finished steps.
+        Each tool call of the run stays as a closed tool line, the same as
+        after a reload.
 
         The form goes first. The removal of the reply stops this stream, so
         the page does not get an event after it.
@@ -424,7 +422,7 @@ class _TurnStream:
         )
         yield SSE.patch_elements(
             render_run_end(
-                tool_names=self._steps,
+                tool_calls=self._steps,
                 reply_text=reply_text,
                 approvals=approvals,
                 error_code=error_code,

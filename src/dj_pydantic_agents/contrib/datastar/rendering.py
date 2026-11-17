@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from dj_pydantic_agents.dtos.conversation_queries import ApprovalProjectionDTO
     from dj_pydantic_agents.extensions import ReplySanitizer
+    from dj_pydantic_agents.kit.events import ToolCallEventDTO
 
 TEMPLATES = "dj_pydantic_agents"
 
@@ -40,10 +41,7 @@ def render_reply(*, turn_id: str) -> str:
 
 
 def render_tool_steps(*, tool_names: Sequence[str]) -> str:
-    return _render(
-        f"{TEMPLATES}/tool_steps.html",
-        {"tool_names": tool_names, "state": "running"},
-    )
+    return _render(f"{TEMPLATES}/tool_steps.html", {"tool_names": tool_names})
 
 
 def render_reply_text(*, text: str, sanitizer: ReplySanitizer) -> str:
@@ -52,7 +50,7 @@ def render_reply_text(*, text: str, sanitizer: ReplySanitizer) -> str:
 
 def render_run_end(
     *,
-    tool_names: Sequence[str] = (),
+    tool_calls: Sequence[ToolCallEventDTO] = (),
     reply_text: str = "",
     approvals: Sequence[ApprovalProjectionDTO] = (),
     error_code: str = "",
@@ -61,7 +59,7 @@ def render_run_end(
     return _render(
         f"{TEMPLATES}/run_end.html",
         {
-            "tool_names": tool_names,
+            "tool_calls": tool_calls,
             "reply_text": reply_text,
             "approvals": approvals,
             "error_code": error_code,

@@ -199,29 +199,37 @@ class TestStreamTurn(TestCase):
         self.assert_open_form(form)
         self.assert_run_end(end)
 
-    async def test_each_new_tool_adds_a_step_line(self):
+    async def test_each_tool_call_adds_a_step_line(self):
         ScriptedTransport.script = [
             PAUSE,
-            ToolCallEventDTO(tool_call_id="ws-1", tool_name="web_search"),
-            # A native web search opens a page after the search.
-            ToolCallEventDTO(tool_call_id="ws-2", tool_name="web_search"),
-            ToolCallEventDTO(tool_call_id="call-1", tool_name="send_mail"),
+            ToolCallEventDTO(
+                tool_call_id="ws-1",
+                tool_name="web_search",
+                args_json='{"query":"Rolex"}',
+            ),
+            ToolCallEventDTO(
+                tool_call_id="call-1",
+                tool_name="send_mail",
+                args_json='{"to":"ada"}',
+            ),
             TurnDoneEventDTO(text="Done"),
         ]
 
         search, both, _form, end = await self.stream()
 
         assert search.selector == f"#{self.steps_id()}"
-        assert search.elements.count('class="djpa-step djpa-step--running"') == 1
+        assert search.elements.count('class="djpa-step"') == 1
         assert "Searching the web" in search.elements
         assert both.mode == "inner"
-        assert both.elements.count("djpa-step--running") == 2  # noqa: PLR2004
+        assert both.elements.count('class="djpa-step"') == 2  # noqa: PLR2004
         assert "Using send_mail" in both.elements
-        # The steps stay at the end of the run, as finished steps.
+        # At the end of the run, each call is a closed tool line with its data.
         self.assert_run_end(end)
-        assert end.elements.count("djpa-step--called") == 2  # noqa: PLR2004
-        assert "Searched the web" in end.elements
-        assert "Used send_mail" in end.elements
+        assert end.elements.count("<details") == 2  # noqa: PLR2004
+        assert " open" not in end.elements
+        assert "Searched the web</summary>" in end.elements
+        assert "{&quot;query&quot;:&quot;Rolex&quot;}" in end.elements
+        assert "Used send_mail</summary>" in end.elements
         assert end.elements.index("Searched the web") < end.elements.index("Done")
 
     async def test_a_new_stream_shows_the_earlier_steps(self):
