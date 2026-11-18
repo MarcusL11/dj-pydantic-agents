@@ -9,11 +9,14 @@ from dj_pydantic_agents.dtos.turn_commands import TurnRunInputDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
 from dj_pydantic_agents.dtos.turn_streams import TurnSnapshotProjectionDTO
+from dj_pydantic_agents.kit.attachments import FileRefDTO
+from dj_pydantic_agents.kit.attachments import PromptFile
 
 CONVERSATION_ID = "cnv_01m7f5c8m8xzp0zy3vmbgzbdw9"
 TURN_ID = "trn_01m7f5c8m8xzp0zy3vmbgzbdw9"
 APPROVAL_ID = "apr_01m7f5c8m8xzp0zy3vmbgzbdw9"
 USER_ID = 7
+FILE_ID = "fil_01m7f5c8m8xzp0zy3vmbgzbdw9"
 
 
 def a_run_input(**overrides: Any) -> TurnRunInputDTO:
@@ -75,3 +78,23 @@ def a_snapshot(**overrides: Any) -> TurnSnapshotProjectionDTO:
         "decided_tool_call_ids": (),
     }
     return TurnSnapshotProjectionDTO(**{**values, **overrides})
+
+
+def a_file_ref(**overrides: Any) -> FileRefDTO:
+    values: dict[str, Any] = {
+        "file_id": FILE_ID,
+        "name": "invoice.pdf",
+        "media_type": "application/pdf",
+    }
+    return FileRefDTO(**{**values, **overrides})
+
+
+def a_prompt_file(**overrides: Any) -> PromptFile:
+    values: dict[str, Any] = {
+        "file_id": FILE_ID,
+        "turn_id": TURN_ID,
+        "name": "invoice.pdf",
+        "media_type": "application/pdf",
+        "data": b"%PDF-1.7 invoice",
+    }
+    return PromptFile(**{**values, **overrides})

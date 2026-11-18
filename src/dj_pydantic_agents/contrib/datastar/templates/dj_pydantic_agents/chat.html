@@ -10,7 +10,7 @@ newest line, with no JavaScript.
   <div class="djpa-chat__scroll">
     <div id="djpa-transcript" class="djpa-transcript">
       {% for line in page.lines %}
-        {% include "dj_pydantic_agents/transcript_line.html" with kind=line.kind text=line.text tool_name=line.tool_name only %}
+        {% include "dj_pydantic_agents/transcript_line.html" with kind=line.kind text=line.text tool_name=line.tool_name files=line.files only %}
       {% endfor %}
       {% with turn=page.active_turn %}
         {% if turn.unsaved_prompt %}
@@ -26,5 +26,5 @@ newest line, with no JavaScript.
       {% endwith %}
     </div>
   </div>
-  {% include "dj_pydantic_agents/message_form.html" with conversation_id=page.conversation_id is_closed=page.active_turn csrf_token=csrf_token only %}
+  {% include "dj_pydantic_agents/message_form.html" with conversation_id=page.conversation_id is_closed=page.active_turn csrf_token=csrf_token pending_files=page.pending_files only %}
 </div>

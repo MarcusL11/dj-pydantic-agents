@@ -19,7 +19,7 @@ Version 0.1 is complete. Vintage Eye is the first project that uses it. It has n
 Install the package from PyPI. Select the extras that the project uses: `celery`, `codex` and `datastar`.
 
 ```bash
-uv add "dj-pydantic-agents[celery,codex,datastar]==0.6.0"
+uv add "dj-pydantic-agents[celery,codex,datastar]==0.7.0"
 ```
 
 ## Usage limits
@@ -34,6 +34,32 @@ DJ_PYDANTIC_AGENTS = {
 ```
 
 A resume after approvals is a new run, so it gets the full limits again. The Harness `SubAgents` capability adds the usage of each child to the run by default. Then the limits also cover the children. The check `dj_pydantic_agents.E007` fails when `UsageLimits` does not accept the value.
+
+## Files in a message
+
+The package sends the files of a user message to the model, as `BinaryContent`. The project stores the files. It also does the upload, the type checks and the cleanup. The package keeps only a reference of each file in the history: its ID, its name and its type.
+
+The chat takes no files by default. To take files, give a class with the `PromptFiles` contract of `dj_pydantic_agents.extensions`:
+
+```python
+DJ_PYDANTIC_AGENTS = {
+    ...,
+    "PROMPT_FILES": "myproject.agents.prompt_files.AgentPromptFiles",
+    "FILE_HISTORY_TURNS": 2,  # The latest turns, with the current turn.
+}
+```
+
+The class has five methods:
+
+- `pending(conversation_id, user_id)`: the files that wait for the next message. The page shows them in the message form.
+- `claim(conversation_id, user_id, turn_id, file_ids)`: bind the files to the new turn. `start_turn()` calls it in its transaction, after it adds the turn. Raise `FilesRefused` to stop the send. The rollback also removes the turn, and the form shows the text of the error.
+- `describe(file_ids)`: the size and the URL of each file of the transcript. Leave out an unknown ID. The page then shows the name from the history.
+- `load(turn_ids)`: the bytes of the files of these turns, as `PromptFile` items. A worker calls it before each run.
+- `forget(conversation_id)`: delete the files of a deleted conversation. `delete_conversation()` calls it after the delete. The package logs an error of it and does not raise it.
+
+The send view reads a form field `file` for each file ID. The default `message_form.html` has no file input. A project override adds the input and a hidden `file` field for each pending file.
+
+The stored history holds no file bytes. Before each run, the worker loads the files of the latest `FILE_HISTORY_TURNS` turns. An older file stays out of the request, and its label tells the model that. The check `dj_pydantic_agents.E008` fails when `FILE_HISTORY_TURNS` is not an integer of 1 or more.
 
 ## Celery
 
@@ -161,7 +187,9 @@ Then the page uses `<c-agent-chat :page="page" />`.
 
 ### Templates and class names
 
-The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html` and `message_form.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". It also has words for `delegate_task`, the tool of the Harness `SubAgents` capability: "Delegating a task", "Delegated a task" and "Result of a task". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+The templates are plain Django templates in `dj_pydantic_agents/`: `chat.html`, `transcript_line.html`, `reply.html`, `tool_steps.html`, `tool_label.html`, `run_end.html`, `approval_card.html`, `message_form.html` and `csrf_option.html`. `tool_label.html` holds the words for a tool, for example "Searching the web", "Searched the web" and "Used <tool>". It also has words for `delegate_task`, the tool of the Harness `SubAgents` capability: "Delegating a task", "Delegated a task" and "Result of a task". To change one, put a template at the same path in the `templates/` folder of the project. An override of `approval_card.html` must keep the partial `actions`.
+
+An override of `message_form.html` must keep the partial `error` and its ID `djpa-message-form-error`. Each Datastar POST of the templates sends the CSRF header of `csrf_option.html`. A project with a CSRF bridge for Datastar requests can put an empty file in its place.
 
 The package has no CSS. Style these classes:
 
@@ -169,7 +197,8 @@ The package has no CSS. Style these classes:
 - `djpa-line` with `djpa-line--user`, `djpa-line--assistant`, `djpa-line--tool-call`, `djpa-line--tool-result` or `djpa-line--error`, and `djpa-line__summary`, `djpa-line__data`. A tool line is a closed `<details>` element.
 - `djpa-reply`, `djpa-reply__steps`, `djpa-step` (a step line while the reply streams), `djpa-reply__text`
 - `djpa-approval`, `djpa-approval__tool`, `djpa-approval__args`, `djpa-approval__actions`, `djpa-approval__form`, `djpa-approval__approve`, `djpa-approval__deny`, `djpa-approval__decision`
-- `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`
+- `djpa-message-form`, `djpa-message-form__input`, `djpa-message-form__send`, `djpa-message-form__error`
+- `djpa-files`, `djpa-files__item` (the files of a user line, before the line)
 
 A chat with a fixed size and a scroll pane needs four rules. With `column-reverse`, the browser keeps the view at the newest line, with no JavaScript:
 

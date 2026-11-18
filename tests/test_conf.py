@@ -20,6 +20,8 @@ class TestLoadSettings(SimpleTestCase):
         )
         assert settings.stale_turn_seconds == DEFAULT_STALE_TURN_SECONDS
         assert settings.usage_limits is None
+        assert settings.prompt_files is None
+        assert settings.file_history_turns == 2  # noqa: PLR2004
 
     @override_settings(
         DJ_PYDANTIC_AGENTS={

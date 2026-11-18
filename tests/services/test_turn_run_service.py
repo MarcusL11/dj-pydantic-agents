@@ -1,6 +1,14 @@
+from typing import Any
 from unittest.mock import create_autospec
 
 from pydantic_ai.exceptions import ModelAPIError
+from pydantic_ai.messages import BinaryContent
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelRequest
+from pydantic_ai.messages import UserContent
+from pydantic_ai.messages import UserPromptPart
+from pydantic_ai.models.function import AgentInfo
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import UsageLimits
 
 from dj_pydantic_agents.dtos.turn_commands import ClaimTurnCommandDTO
@@ -15,6 +23,7 @@ from dj_pydantic_agents.kit.events import TextDeltaEventDTO
 from dj_pydantic_agents.kit.events import ToolCallEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
 from dj_pydantic_agents.kit.events import TurnFailedEventDTO
+from dj_pydantic_agents.kit.history import messages_to_json
 from dj_pydantic_agents.kit.runner import TurnRunner
 from dj_pydantic_agents.repositories.turn_command_repository import (
     TurnCommandRepository,
@@ -22,12 +31,15 @@ from dj_pydantic_agents.repositories.turn_command_repository import (
 from dj_pydantic_agents.services.turn_run_service import TurnRunService
 from dj_pydantic_agents.signals import turn_finished
 from tests.builders import CONVERSATION_ID
+from tests.builders import FILE_ID
 from tests.builders import TURN_ID
 from tests.builders import USER_ID
+from tests.builders import a_prompt_file
 from tests.builders import a_run_input
 from tests.builders import a_saved_result
 from tests.fakes import ASSISTANT_SPEC
 from tests.fakes import FakeModelFactory
+from tests.fakes import FakePromptFiles
 from tests.fakes import FakeTransport
 from tests.kit.fakes import approval_model
 from tests.kit.fakes import text_model
@@ -38,6 +50,38 @@ SEND_MAIL_APPROVAL = PendingApprovalDTO(
     tool_name="send_mail",
     args_json='{"to":"ada"}',
 )
+PDF_BYTES = b"%PDF-1.7 invoice"
+EARLIER_TURN_ID = "trn_earlier"
+
+
+def recording_model(requests: list[list[ModelMessage]]) -> FunctionModel:
+    """A model that keeps the messages of each request and replies "Read"."""
+
+    async def stream(messages: list[ModelMessage], _info: AgentInfo):
+        requests.append(messages)
+        yield "Read"
+
+    return FunctionModel(stream_function=stream)
+
+
+def prompt_contents(messages: list[ModelMessage]) -> list[Any]:
+    return [
+        part.content
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ]
+
+
+def stored_prompt(*, text: str) -> list[Any]:
+    """The stored JSON of a first run with one PDF: the file has no data."""
+    prompt: list[UserContent] = [
+        text,
+        "Attached file: invoice.pdf",
+        BinaryContent(data=b"", media_type="application/pdf", identifier=FILE_ID),
+    ]
+    return messages_to_json([ModelRequest(parts=[UserPromptPart(content=prompt)])])
 
 
 class TestTurnRunService(SimpleTestCase):
@@ -48,6 +92,8 @@ class TestTurnRunService(SimpleTestCase):
         self.model_factory = create_autospec(FakeModelFactory, instance=True)
         self.model_factory.build.return_value = text_model("Hello", " there")
         self.deps_calls: list[dict[str, object]] = []
+        self.prompt_files = create_autospec(FakePromptFiles, instance=True)
+        self.prompt_files.load.return_value = ()
         FakeTransport.reset()
         self.finished: list[TurnFinishedEventDTO] = []
         turn_finished.connect(self.on_finished)
@@ -59,7 +105,7 @@ class TestTurnRunService(SimpleTestCase):
     def build_deps(self, **kwargs):
         self.deps_calls.append(kwargs)
 
-    def run_turn(self, *, usage_limits=None):
+    def run_turn(self, *, usage_limits=None, with_files=True):
         TurnRunService(
             repository=self.repository,
             specs={"assistant": ASSISTANT_SPEC},
@@ -68,7 +114,87 @@ class TestTurnRunService(SimpleTestCase):
             transport=FakeTransport(),
             runner=TurnRunner(),
             usage_limits=usage_limits,
+            prompt_files=self.prompt_files if with_files else None,
+            file_history_turns=3,
         ).run_turn(command=RunTurnCommandDTO(turn_id=TURN_ID))
+
+    def test_the_files_of_the_turn_go_to_the_model_but_not_to_the_history(self):
+        self.repository.claim_turn.return_value = a_run_input(
+            prompt="Read this",
+            recent_turn_ids=(TURN_ID, EARLIER_TURN_ID),
+        )
+        self.prompt_files.load.return_value = (a_prompt_file(data=PDF_BYTES),)
+        requests: list[list[ModelMessage]] = []
+        self.model_factory.build.return_value = recording_model(requests)
+
+        self.run_turn()
+
+        self.prompt_files.load.assert_called_once_with(
+            turn_ids=(TURN_ID, EARLIER_TURN_ID),
+        )
+        [sent] = prompt_contents(requests[0])
+        assert sent[:2] == ["Read this", "Attached file: invoice.pdf"]
+        assert (sent[2].data, sent[2].identifier) == (PDF_BYTES, FILE_ID)
+        saved = self.saved_command().new_messages[0]["parts"][0]["content"]
+        assert saved == stored_prompt(text="Read this")[0]["parts"][0]["content"]
+
+    def test_a_later_turn_sends_the_file_of_a_recent_turn_again(self):
+        self.repository.claim_turn.return_value = a_run_input(
+            prompt="And the total?",
+            history=tuple(stored_prompt(text="Read this")),
+            recent_turn_ids=(TURN_ID, EARLIER_TURN_ID),
+        )
+        self.prompt_files.load.return_value = (
+            a_prompt_file(turn_id=EARLIER_TURN_ID, data=PDF_BYTES),
+        )
+        requests: list[list[ModelMessage]] = []
+        self.model_factory.build.return_value = recording_model(requests)
+
+        self.run_turn()
+
+        earlier, current = prompt_contents(requests[0])
+        assert earlier[2].data == PDF_BYTES
+        assert current == "And the total?"
+
+    def test_an_old_file_stays_out_and_its_label_says_so(self):
+        self.repository.claim_turn.return_value = a_run_input(
+            prompt="Thanks",
+            history=tuple(stored_prompt(text="Read this")),
+            recent_turn_ids=(TURN_ID,),
+        )
+        requests: list[list[ModelMessage]] = []
+        self.model_factory.build.return_value = recording_model(requests)
+
+        self.run_turn()
+
+        earlier, _current = prompt_contents(requests[0])
+        assert earlier == [
+            "Read this",
+            "Attached file: invoice.pdf (from an earlier message. "
+            "The file is not in this request.)",
+        ]
+
+    def test_a_chat_with_no_prompt_files_loads_no_files(self):
+        self.repository.claim_turn.return_value = a_run_input(
+            recent_turn_ids=(TURN_ID,),
+        )
+
+        self.run_turn(with_files=False)
+
+        self.prompt_files.load.assert_not_called()
+        self.repository.save_turn_result.assert_called_once()
+
+    def test_a_failed_load_fails_the_turn(self):
+        self.repository.claim_turn.return_value = a_run_input(
+            recent_turn_ids=(TURN_ID,),
+        )
+        self.prompt_files.load.side_effect = FileNotFoundError
+
+        with self.assertLogs("dj_pydantic_agents", level="ERROR"):
+            self.run_turn()
+
+        self.repository.save_turn_result.assert_not_called()
+        self.repository.fail_turn.assert_called_once()
 
     def saved_command(self):
         return self.repository.save_turn_result.call_args.kwargs["command"]
@@ -88,7 +214,7 @@ class TestTurnRunService(SimpleTestCase):
         self.run_turn()
 
         self.repository.claim_turn.assert_called_once_with(
-            command=ClaimTurnCommandDTO(turn_id=TURN_ID),
+            command=ClaimTurnCommandDTO(turn_id=TURN_ID, history_turns=3),
         )
         assert self.deps_calls == [
             {

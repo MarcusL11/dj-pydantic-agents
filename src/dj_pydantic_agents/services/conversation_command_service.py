@@ -4,6 +4,7 @@
 # types load at runtime.
 # ruff: noqa: TC001, TC003
 
+import logging
 from collections.abc import Mapping
 
 from dj_pydantic_agents.dtos.conversation_queries import GetApprovalAgentQueryDTO
@@ -28,6 +29,7 @@ from dj_pydantic_agents.errors import AgentAccessDenied
 from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import TurnNotQueued
 from dj_pydantic_agents.extensions import AgentPermission
+from dj_pydantic_agents.extensions import PromptFiles
 from dj_pydantic_agents.extensions import TaskRunner
 from dj_pydantic_agents.kit.specs import AgentSpec
 from dj_pydantic_agents.repositories.conversation_query_repository import (
@@ -38,6 +40,8 @@ from dj_pydantic_agents.repositories.turn_command_repository import (
 )
 from dj_pydantic_agents.signals import approval_decided
 from dj_pydantic_agents.signals import send_hook
+
+logger = logging.getLogger(__name__)
 
 # The error code of a turn that the task runner did not take.
 ENQUEUE_FAILED = TurnNotQueued.error_code
@@ -55,6 +59,7 @@ class ConversationCommandService:
         permission: AgentPermission,
         task_runner: TaskRunner,
         stale_turn_seconds: int,
+        prompt_files: PromptFiles | None = None,
     ) -> None:
         self._repository = repository
         self._queries = queries
@@ -62,6 +67,8 @@ class ConversationCommandService:
         self._permission = permission
         self._task_runner = task_runner
         self._stale_turn_seconds = stale_turn_seconds
+        # The project store of the message files. None: the chat takes no files.
+        self._prompt_files = prompt_files
 
     def create_conversation(
         self,
@@ -79,20 +86,31 @@ class ConversationCommandService:
         self._repository.rename_conversation(command=command)
 
     def delete_conversation(self, *, command: DeleteConversationCommandDTO) -> None:
-        """Delete an idle conversation. An active turn raises TurnInProgress."""
+        """Delete an idle conversation. An active turn raises TurnInProgress.
+
+        After the delete, PROMPT_FILES forgets the files of the conversation.
+        """
         self._check_conversation_access(
             conversation_id=command.conversation_id,
             user_id=command.user_id,
         )
         self._repository.delete_conversation(command=command)
+        self._forget_files(conversation_id=command.conversation_id)
 
     def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:
-        """Queue the message as a new turn, then give the turn to the task runner."""
+        """Queue the message as a new turn, then give the turn to the task runner.
+
+        The turn takes the files of the message. A refusal of PROMPT_FILES
+        raises FilesRefused, and no turn starts.
+        """
         self._check_conversation_access(
             conversation_id=command.conversation_id,
             user_id=command.user_id,
         )
-        result = self._repository.start_turn(command=command)
+        result = self._repository.start_turn(
+            command=command,
+            prompt_files=self._prompt_files,
+        )
         self._enqueue(turn_id=result.turn_id, conversation_id=result.conversation_id)
         return result
 
@@ -182,6 +200,18 @@ class ConversationCommandService:
         if not self._permission.can_use(user_id=user_id, agent_name=agent_name):
             msg = f"The user cannot use the agent {agent_name!r}."
             raise AgentAccessDenied(msg)
+
+    def _forget_files(self, *, conversation_id: str) -> None:
+        """Log an error of the project. The delete of the conversation stays."""
+        if self._prompt_files is None:
+            return
+        try:
+            self._prompt_files.forget(conversation_id=conversation_id)
+        except Exception:
+            logger.exception(
+                "PROMPT_FILES did not forget the files of conversation %s.",
+                conversation_id,
+            )
 
     def _enqueue(self, *, turn_id: str, conversation_id: str) -> None:
         """Fail the turn if the task runner refuses it.

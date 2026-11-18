@@ -10,6 +10,7 @@ from pydantic import Field
 from pydantic import StringConstraints
 from pydantic import model_validator
 
+from dj_pydantic_agents.kit.attachments import FileRefDTO  # noqa: TC001
 from dj_pydantic_agents.kit.dtos import InternalDTO
 from dj_pydantic_agents.kit.events import PendingApprovalDTO  # noqa: TC001
 
@@ -48,18 +49,25 @@ class DeleteConversationCommandDTO(InternalDTO):
 
 
 class StartTurnCommandDTO(InternalDTO):
+    """The message takes the pending files of file_ids. PROMPT_FILES checks them."""
+
     conversation_id: str
     user_id: UserId
     prompt: str = Field(min_length=1)
+    file_ids: tuple[str, ...] = ()
 
 
 class TurnStartedResultDTO(InternalDTO):
     turn_id: str
     conversation_id: str
+    # The files that the turn took, as PROMPT_FILES gives them.
+    files: tuple[FileRefDTO, ...] = ()
 
 
 class ClaimTurnCommandDTO(InternalDTO):
     turn_id: str
+    # The run gets the IDs of this number of latest turns, with this turn.
+    history_turns: int = Field(default=2, ge=1)
 
 
 class TurnRunInputDTO(InternalDTO):
@@ -79,6 +87,9 @@ class TurnRunInputDTO(InternalDTO):
     # Each decided approval of the turn, by tool call ID. After a second stop,
     # this also holds the decisions of the first stop.
     decisions: dict[str, bool] | None
+    # The latest turns of the conversation, this turn first. The run loads
+    # their files.
+    recent_turn_ids: tuple[str, ...] = ()
 
 
 class TurnUsageDTO(InternalDTO):

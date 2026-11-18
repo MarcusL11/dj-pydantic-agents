@@ -51,6 +51,29 @@ class WrongKeywordSanitizer:
         return markdown
 
 
+class FilesWithoutLoad:
+    """PROMPT_FILES with no load()."""
+
+    def pending(self, *, conversation_id: str, user_id: UserId) -> tuple[()]:
+        return ()
+
+    def claim(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+        turn_id: str,
+        file_ids: tuple[str, ...],
+    ) -> tuple[()]:
+        return ()
+
+    def describe(self, *, file_ids: tuple[str, ...]) -> tuple[()]:
+        return ()
+
+    def forget(self, *, conversation_id: str) -> None:
+        pass
+
+
 def deps_without_conversation(*, agent_name: str, user_id: UserId) -> None:
     pass
 
@@ -115,11 +138,24 @@ class TestCheckSettings(SimpleTestCase):
             ),
             param({"USAGE_LIMITS": {"requests": 60}}, "E007", id="usage_key"),
             param({"USAGE_LIMITS": [60]}, "E007", id="usage_type"),
+            param(
+                {"PROMPT_FILES": "tests.test_checks.FilesWithoutLoad"},
+                "E004",
+                id="files_without_load",
+            ),
+            param({"FILE_HISTORY_TURNS": 0}, "E008", id="no_history_turns"),
+            param({"FILE_HISTORY_TURNS": "2"}, "E008", id="history_turns_text"),
         ],
     )
     def test_reports_a_wrong_extension_point(self, overrides, error_id):
         with override_settings(DJ_PYDANTIC_AGENTS=with_keys(**overrides)):
             assert self.check_ids() == [f"dj_pydantic_agents.{error_id}"]
+
+    def test_accepts_prompt_files(self):
+        values = with_keys(PROMPT_FILES="tests.fakes.FakePromptFiles")
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            assert check_settings() == []
 
     def test_accepts_usage_limits(self):
         values = with_keys(USAGE_LIMITS={"request_limit": 60})

@@ -1,0 +1,6 @@
+{% comment %}
+The CSRF option of each Datastar POST in the package templates. The context:
+csrf_token. A project with a CSRF bridge for Datastar requests can replace
+this template with an empty one. Each POST puts this option last, so that an
+empty template leaves a valid object.
+{% endcomment %}headers: {'X-CSRFToken': '{{ csrf_token }}'}

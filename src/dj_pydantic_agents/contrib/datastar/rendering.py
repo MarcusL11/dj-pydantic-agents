@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
     from dj_pydantic_agents.dtos.conversation_queries import ApprovalProjectionDTO
     from dj_pydantic_agents.extensions import ReplySanitizer
+    from dj_pydantic_agents.kit.attachments import FileRefDTO
     from dj_pydantic_agents.kit.events import ToolCallEventDTO
 
 TEMPLATES = "dj_pydantic_agents"
@@ -29,10 +30,15 @@ def reply_steps_id(turn_id: str) -> str:
     return f"{reply_id(turn_id)}-steps"
 
 
-def render_transcript_line(*, kind: str, text: str) -> str:
+def render_transcript_line(
+    *,
+    kind: str,
+    text: str,
+    files: Sequence[FileRefDTO] = (),
+) -> str:
     return _render(
         f"{TEMPLATES}/transcript_line.html",
-        {"kind": kind, "text": text},
+        {"kind": kind, "text": text, "files": files},
     )
 
 
@@ -74,6 +80,7 @@ def render_message_form(
     is_closed: bool,
     csrf_token: str,
     focus: bool = False,
+    pending_files: Sequence[FileRefDTO] = (),
 ) -> str:
     return _render(
         f"{TEMPLATES}/message_form.html",
@@ -82,8 +89,13 @@ def render_message_form(
             "is_closed": is_closed,
             "csrf_token": csrf_token,
             "focus": focus,
+            "pending_files": pending_files,
         },
     )
+
+
+def render_form_error(*, message: str) -> str:
+    return _render(f"{TEMPLATES}/message_form.html#error", {"error": message})
 
 
 def render_approval_actions(*, approval_id: str, decision: Decision) -> str:

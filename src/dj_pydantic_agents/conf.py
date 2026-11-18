@@ -33,6 +33,10 @@ DEFAULTS: Mapping[str, Any] = {
     # The keyword arguments of pydantic_ai.usage.UsageLimits for one run of a
     # turn, for example {"request_limit": 60}. None sets no limit.
     "USAGE_LIMITS": None,
+    # The dotted path of the PromptFiles class. None: the chat takes no files.
+    "PROMPT_FILES": None,
+    # A run sends the files of this number of latest turns, with the current turn.
+    "FILE_HISTORY_TURNS": 2,
 }
 
 
@@ -51,6 +55,8 @@ class PackageSettings:
     stale_turn_seconds: int
     codex_token_keys: Sequence[str]
     usage_limits: Mapping[str, Any] | None
+    prompt_files: str | None
+    file_history_turns: int
 
 
 def raw_settings() -> Mapping[str, Any] | None:
@@ -82,4 +88,6 @@ def load_settings() -> PackageSettings:
         stale_turn_seconds=values["STALE_TURN_SECONDS"],
         codex_token_keys=values["CODEX_TOKEN_KEYS"],
         usage_limits=values["USAGE_LIMITS"],
+        prompt_files=values["PROMPT_FILES"],
+        file_history_turns=values["FILE_HISTORY_TURNS"],
     )

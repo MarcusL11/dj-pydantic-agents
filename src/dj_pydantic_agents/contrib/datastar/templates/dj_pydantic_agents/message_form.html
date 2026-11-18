@@ -1,11 +1,19 @@
 {% load i18n %}
 {% comment %}
-The message form. The context: conversation_id, is_closed, csrf_token and
-focus. The form is closed while a turn is active. With focus, the input gets
-the focus when the form opens again after a run.
+The message form. The context: conversation_id, is_closed, csrf_token, focus
+and pending_files. The form is closed while a turn is active. With focus, the
+input gets the focus when the form opens again after a run.
+
+This form takes no files. With PROMPT_FILES, a project override adds the file
+input and a hidden "file" field with the ID of each pending file. The send
+view puts a refusal of the files in the partial "error". An override must keep
+that partial and its ID.
 {% endcomment %}
 <form id="djpa-message-form" class="djpa-message-form"
-      data-on:submit="@post('{% url 'dj_pydantic_agents:send_message' conversation_id %}', {contentType: 'form', headers: {'X-CSRFToken': '{{ csrf_token }}'}})">
+      data-on:submit="@post('{% url 'dj_pydantic_agents:send_message' conversation_id %}', {contentType: 'form', {% include "dj_pydantic_agents/csrf_option.html" %}})">
+  {% partialdef error inline %}
+    <p id="djpa-message-form-error" class="djpa-message-form__error" role="alert">{{ error }}</p>
+  {% endpartialdef %}
   <textarea name="prompt" class="djpa-message-form__input" required{% if is_closed %} disabled{% endif %}{% if focus %} data-init="el.focus()"{% endif %}></textarea>
   <button type="submit" class="djpa-message-form__send"{% if is_closed %} disabled{% endif %}>{% translate "Send" %}</button>
 </form>

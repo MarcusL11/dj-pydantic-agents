@@ -4,6 +4,7 @@ from datetime import datetime  # noqa: TC003
 from typing import Literal
 
 from dj_pydantic_agents.dtos.turn_commands import UserId  # noqa: TC001
+from dj_pydantic_agents.kit.attachments import FileRefDTO  # noqa: TC001
 from dj_pydantic_agents.kit.dtos import InternalDTO
 from dj_pydantic_agents.kit.transcript import TranscriptLineDTO  # noqa: TC001
 
@@ -39,6 +40,8 @@ class ConversationPageProjectionDTO(InternalDTO):
     lines: tuple[TranscriptLineDTO, ...]
     active_turn: ActiveTurnProjectionDTO | None
     approvals: tuple[ApprovalProjectionDTO, ...]
+    # The files that wait for the next message. PROMPT_FILES gives them.
+    pending_files: tuple[FileRefDTO, ...] = ()
 
 
 class GetConversationAgentQueryDTO(InternalDTO):
