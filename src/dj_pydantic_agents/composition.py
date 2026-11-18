@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from dj_pydantic_agents.dtos.turn_commands import UserId
     from dj_pydantic_agents.extensions import DepsFactory
     from dj_pydantic_agents.extensions import EventTransport
+    from dj_pydantic_agents.extensions import PromptFiles
     from dj_pydantic_agents.extensions import ReplySanitizer
     from dj_pydantic_agents.kit.specs import AgentSpec
 
@@ -46,6 +47,7 @@ def build_conversation_command_service() -> ConversationCommandService:
         permission=import_string(settings.permission)(),
         task_runner=import_string(settings.task_runner)(),
         stale_turn_seconds=settings.stale_turn_seconds,
+        prompt_files=_prompt_files(settings.prompt_files),
     )
 
 
@@ -54,6 +56,7 @@ def build_conversation_query_service() -> ConversationQueryService:
     return ConversationQueryService(
         repository=ConversationQueryRepository(),
         permission=import_string(settings.permission)(),
+        prompt_files=_prompt_files(settings.prompt_files),
     )
 
 
@@ -68,6 +71,8 @@ def build_turn_run_service() -> TurnRunService:
         transport=build_event_transport(),
         runner=TurnRunner(),
         usage_limits=_usage_limits(settings.usage_limits),
+        prompt_files=_prompt_files(settings.prompt_files),
+        file_history_turns=settings.file_history_turns,
     )
 
 
@@ -83,6 +88,10 @@ def build_reply_sanitizer() -> ReplySanitizer:
 
 def specs_by_name(path: str) -> dict[str, AgentSpec]:
     return {spec.name: spec for spec in import_string(path)()}
+
+
+def _prompt_files(path: str | None) -> PromptFiles | None:
+    return None if path is None else import_string(path)()
 
 
 def _usage_limits(values: Mapping[str, Any] | None) -> UsageLimits | None:

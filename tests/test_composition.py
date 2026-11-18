@@ -23,6 +23,7 @@ from dj_pydantic_agents.services.conversation_query_service import (
     ConversationQueryService,
 )
 from dj_pydantic_agents.services.turn_run_service import TurnRunService
+from tests.fakes import FakePromptFiles
 from tests.fakes import FakeTransport
 from tests.testcases import SimpleTestCase
 
@@ -61,6 +62,29 @@ class TestComposition(SimpleTestCase):
             build_turn_run_service()
 
         assert service_class.call_args.kwargs["usage_limits"] == expected
+
+    def test_each_service_gets_prompt_files_from_the_settings(self):
+        values = {
+            **settings.DJ_PYDANTIC_AGENTS,
+            "PROMPT_FILES": "tests.fakes.FakePromptFiles",
+            "FILE_HISTORY_TURNS": 3,
+        }
+
+        with override_settings(DJ_PYDANTIC_AGENTS=values):
+            services = (
+                build_conversation_command_service(),
+                build_conversation_query_service(),
+                build_turn_run_service(),
+            )
+
+        assert all(
+            isinstance(service._prompt_files, FakePromptFiles)  # noqa: SLF001
+            for service in services
+        )
+        assert services[2]._file_history_turns == 3  # noqa: SLF001, PLR2004
+
+    def test_no_prompt_files_by_default(self):
+        assert build_turn_run_service()._prompt_files is None  # noqa: SLF001
 
     @override_settings(DJ_PYDANTIC_AGENTS={})
     def test_a_missing_setting_stops_the_build(self):

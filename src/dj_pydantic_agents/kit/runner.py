@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterable
 from collections.abc import Callable
 from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from pydantic_ai.agent import EventStreamHandler
     from pydantic_ai.messages import AgentStreamEvent
     from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.messages import UserContent
     from pydantic_ai.models import Model
     from pydantic_ai.usage import RunUsage
     from pydantic_ai.usage import UsageLimits
@@ -50,7 +52,7 @@ class TurnRunner:
         spec: AgentSpec,
         model: Model,
         history: list[ModelMessage],
-        prompt: str | None,
+        prompt: str | Sequence[UserContent] | None,
         pending: DeferredToolRequests | None,
         decisions: Mapping[str, bool] | None,
         deps: object,

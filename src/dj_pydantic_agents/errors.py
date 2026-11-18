@@ -47,3 +47,7 @@ class AgentNotFound(DjPydanticAgentsError):  # noqa: N818
 
 class AgentAccessDenied(DjPydanticAgentsError):  # noqa: N818
     """The permission extension point does not let this user use the agent."""
+
+
+class FilesRefused(DjPydanticAgentsError):  # noqa: N818
+    """PROMPT_FILES did not take the files of a message. The text tells the user why."""

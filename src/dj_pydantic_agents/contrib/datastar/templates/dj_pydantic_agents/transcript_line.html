@@ -1,10 +1,21 @@
 {% load i18n djpa %}
 {% comment %}
 One line of the transcript. The context: kind (user, assistant, tool_call,
-tool_result or error), text and tool_name. A tool line is a closed details
-element: the summary shows the words, and the user opens it to see the data.
+tool_result or error), text, tool_name and files. A tool line is a closed
+details element: the summary shows the words, and the user opens it to see
+the data.
+
+The files of a user line come before its text. Each file shows its name. A
+file with a URL is a link that opens in a new tab.
 {% endcomment %}
 {% if kind == "user" %}
+  {% if files %}
+    <ul class="djpa-files">
+      {% for file in files %}
+        <li class="djpa-files__item">{% if file.url %}<a href="{{ file.url }}" target="_blank" rel="noopener">{{ file.name }}</a>{% else %}{{ file.name }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
   <div class="djpa-line djpa-line--user">{{ text|linebreaksbr }}</div>
 {% elif kind == "assistant" %}
   <div class="djpa-line djpa-line--assistant">{{ text|djpa_reply_html }}</div>

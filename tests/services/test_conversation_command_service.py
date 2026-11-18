@@ -1,3 +1,4 @@
+from unittest import mock
 from unittest.mock import create_autospec
 
 from pydantic import ValidationError
@@ -40,6 +41,7 @@ from tests.builders import a_snapshot
 from tests.builders import a_started_result
 from tests.builders import an_agent
 from tests.fakes import ASSISTANT_SPEC
+from tests.fakes import FakePromptFiles
 from tests.fakes import FakeTaskRunner
 from tests.testcases import SimpleTestCase
 
@@ -77,6 +79,7 @@ class TestConversationCommandService(SimpleTestCase):
         self.permission = create_autospec(StaffPermission, instance=True)
         self.permission.can_use.return_value = True
         self.task_runner = create_autospec(FakeTaskRunner, instance=True)
+        self.prompt_files = create_autospec(FakePromptFiles, instance=True)
         self.service = ConversationCommandService(
             repository=self.repository,
             queries=self.queries,
@@ -84,6 +87,7 @@ class TestConversationCommandService(SimpleTestCase):
             permission=self.permission,
             task_runner=self.task_runner,
             stale_turn_seconds=STALE_TURN_SECONDS,
+            prompt_files=self.prompt_files,
         )
 
     def test_creates_a_conversation_for_a_known_agent(self):
@@ -156,6 +160,38 @@ class TestConversationCommandService(SimpleTestCase):
             command=DELETE_COMMAND,
         )
 
+    def test_a_delete_forgets_the_files_after_the_delete(self):
+        calls = mock.Mock()
+        calls.attach_mock(self.repository.delete_conversation, "delete")
+        calls.attach_mock(self.prompt_files.forget, "forget")
+
+        self.service.delete_conversation(command=DELETE_COMMAND)
+
+        assert calls.mock_calls == [
+            mock.call.delete(command=DELETE_COMMAND),
+            mock.call.forget(conversation_id=CONVERSATION_ID),
+        ]
+
+    def test_a_failed_delete_forgets_nothing(self):
+        self.repository.delete_conversation.side_effect = ConversationNotFound()
+
+        with self.assertRaises(ConversationNotFound):
+            self.service.delete_conversation(command=DELETE_COMMAND)
+
+        self.prompt_files.forget.assert_not_called()
+
+    def test_an_error_of_forget_is_logged_and_the_delete_stays(self):
+        self.prompt_files.forget.side_effect = OSError("No storage")
+
+        with self.assertLogs(
+            "dj_pydantic_agents.services.conversation_command_service",
+            level="ERROR",
+        ) as logs:
+            self.service.delete_conversation(command=DELETE_COMMAND)
+
+        assert CONVERSATION_ID in logs.output[0]
+        self.repository.delete_conversation.assert_called_once()
+
     def test_a_missing_conversation_deletes_nothing(self):
         self.queries.get_conversation_agent.side_effect = ConversationNotFound()
 
@@ -184,7 +220,10 @@ class TestConversationCommandService(SimpleTestCase):
                 user_id=USER_ID,
             ),
         )
-        self.repository.start_turn.assert_called_once_with(command=START_COMMAND)
+        self.repository.start_turn.assert_called_once_with(
+            command=START_COMMAND,
+            prompt_files=self.prompt_files,
+        )
         self.task_runner.enqueue.assert_called_once_with(turn_id=TURN_ID)
 
     def test_a_denied_user_starts_no_turn(self):

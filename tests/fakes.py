@@ -12,6 +12,8 @@ from pydantic_ai.models import Model  # noqa: TC002
 from pydantic_ai.toolsets import FunctionToolset
 
 from dj_pydantic_agents.dtos.turn_commands import UserId  # noqa: TC001
+from dj_pydantic_agents.kit.attachments import FileRefDTO
+from dj_pydantic_agents.kit.attachments import PromptFile
 from dj_pydantic_agents.kit.events import START_EVENT_ID
 from dj_pydantic_agents.kit.events import StreamedTurnEventDTO
 from dj_pydantic_agents.kit.events import TurnEventDTO
@@ -79,3 +81,70 @@ class FakeTaskRunner:
 class AllowAll:
     def can_use(self, *, user_id: UserId, agent_name: str) -> bool:
         return True
+
+
+class FakePromptFiles:
+    """PROMPT_FILES with files in memory. A test sets the class values."""
+
+    pending_files: ClassVar[tuple[FileRefDTO, ...]] = ()
+    described: ClassVar[tuple[FileRefDTO, ...]] = ()
+    files: ClassVar[tuple[PromptFile, ...]] = ()
+    # An error that claim() raises, for example FilesRefused.
+    refusal: ClassVar[Exception | None] = None
+    claims: ClassVar[list[dict[str, object]]] = []
+    loads: ClassVar[list[tuple[str, ...]]] = []
+    forgotten: ClassVar[list[str]] = []
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.pending_files = cls.described = ()
+        cls.files = ()
+        cls.refusal = None
+        cls.claims = []
+        cls.loads = []
+        cls.forgotten = []
+
+    def pending(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+    ) -> tuple[FileRefDTO, ...]:
+        return type(self).pending_files
+
+    def claim(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+        turn_id: str,
+        file_ids: tuple[str, ...],
+    ) -> tuple[FileRefDTO, ...]:
+        type(self).claims.append(
+            {
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "turn_id": turn_id,
+                "file_ids": file_ids,
+            },
+        )
+        if (refusal := type(self).refusal) is not None:
+            raise refusal
+        return tuple(
+            FileRefDTO(
+                file_id=file_id,
+                name=f"{file_id}.pdf",
+                media_type="application/pdf",
+            )
+            for file_id in file_ids
+        )
+
+    def describe(self, *, file_ids: tuple[str, ...]) -> tuple[FileRefDTO, ...]:
+        return tuple(file for file in type(self).described if file.file_id in file_ids)
+
+    def load(self, *, turn_ids: tuple[str, ...]) -> tuple[PromptFile, ...]:
+        type(self).loads.append(turn_ids)
+        return tuple(file for file in type(self).files if file.turn_id in turn_ids)
+
+    def forget(self, *, conversation_id: str) -> None:
+        type(self).forgotten.append(conversation_id)

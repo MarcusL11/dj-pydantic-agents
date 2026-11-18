@@ -1,8 +1,11 @@
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.auth.models import User
+from django.test import override_settings
 from django.urls import reverse
 
+from dj_pydantic_agents.errors import FilesRefused
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
@@ -11,10 +14,15 @@ from tests.factories import ConversationFactory
 from tests.factories import PendingApprovalFactory
 from tests.factories import TurnFactory
 from tests.factories import UserFactory
+from tests.fakes import FakePromptFiles
 from tests.fakes import FakeTaskRunner
 from tests.testcases import TestCase
 
 TRANSCRIPT = "#djpa-transcript"
+WITH_PROMPT_FILES = {
+    **settings.DJ_PYDANTIC_AGENTS,
+    "PROMPT_FILES": "tests.fakes.FakePromptFiles",
+}
 
 
 class TestSendMessage(TestCase):
@@ -30,6 +38,7 @@ class TestSendMessage(TestCase):
 
     def setUp(self):
         FakeTaskRunner.reset()
+        FakePromptFiles.reset()
 
     def url(self, conversation_id=None):
         return reverse(
@@ -37,12 +46,49 @@ class TestSendMessage(TestCase):
             args=[conversation_id or self.conversation.id],
         )
 
-    async def send(self, prompt="Hi", *, user=None, conversation_id=None):
+    async def send(self, prompt="Hi", *, user=None, conversation_id=None, files=()):
         await self.async_client.aforce_login(user or self.owner)
         return await self.async_client.post(
             self.url(conversation_id),
-            {"prompt": prompt},
+            {"prompt": prompt, "file": list(files)},
         )
+
+    @override_settings(DJ_PYDANTIC_AGENTS=WITH_PROMPT_FILES)
+    async def test_the_message_takes_its_files(self):
+        response = await self.send("Read", files=("fil_1", "fil_2"))
+
+        assert response.status_code == 200  # noqa: PLR2004
+        turn = await Turn.objects.aget(conversation_id=self.conversation.id)
+        [claim] = FakePromptFiles.claims
+        assert claim["turn_id"] == turn.id
+        assert claim["file_ids"] == ("fil_1", "fil_2")
+        line, _reply, _form = await read_patches(response)
+        assert "fil_1.pdf" in line.elements
+        assert "fil_2.pdf" in line.elements
+
+    @override_settings(DJ_PYDANTIC_AGENTS=WITH_PROMPT_FILES)
+    async def test_a_refusal_shows_in_the_form_and_starts_no_turn(self):
+        FakePromptFiles.refusal = FilesRefused("A file expired. Attach it again.")
+
+        response = await self.send("Read", files=("fil_1",))
+
+        assert response.status_code == 200  # noqa: PLR2004
+        assert not await Turn.objects.filter(
+            conversation_id=self.conversation.id,
+        ).aexists()
+        assert FakeTaskRunner.turn_ids == []
+        [error] = await read_patches(response)
+        assert (error.selector, error.mode) == ("#djpa-message-form-error", "replace")
+        assert "A file expired. Attach it again." in error.elements
+
+    async def test_a_chat_with_no_prompt_files_refuses_files(self):
+        response = await self.send("Read", files=("fil_1",))
+
+        [error] = await read_patches(response)
+        assert "This chat takes no files." in error.elements
+        assert not await Turn.objects.filter(
+            conversation_id=self.conversation.id,
+        ).aexists()
 
     async def test_shows_the_message_a_streaming_reply_and_a_closed_form(self):
         response = await self.send("Mail *Ada*")

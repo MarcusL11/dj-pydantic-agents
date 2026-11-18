@@ -6,8 +6,10 @@
 
 import logging
 from collections.abc import Mapping
+from collections.abc import Sequence
 from functools import partial
 
+from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import RunUsage
 from pydantic_ai.usage import UsageLimits
 
@@ -25,6 +27,11 @@ from dj_pydantic_agents.errors import DjPydanticAgentsError
 from dj_pydantic_agents.extensions import DepsFactory
 from dj_pydantic_agents.extensions import EventTransport
 from dj_pydantic_agents.extensions import ModelFactory
+from dj_pydantic_agents.extensions import PromptFiles
+from dj_pydantic_agents.kit.attachments import PromptFile
+from dj_pydantic_agents.kit.attachments import user_prompt
+from dj_pydantic_agents.kit.attachments import with_file_data
+from dj_pydantic_agents.kit.attachments import without_file_data
 from dj_pydantic_agents.kit.errors import error_code_for
 from dj_pydantic_agents.kit.events import ApprovalRequestedEventDTO
 from dj_pydantic_agents.kit.events import TurnDoneEventDTO
@@ -59,6 +66,8 @@ class TurnRunService:
         transport: EventTransport,
         runner: TurnRunner,
         usage_limits: UsageLimits | None = None,
+        prompt_files: PromptFiles | None = None,
+        file_history_turns: int = 2,
     ) -> None:
         self._repository = repository
         self._specs = specs
@@ -68,11 +77,18 @@ class TurnRunService:
         self._runner = runner
         # The limits of one run. A resume after approvals is a new run.
         self._usage_limits = usage_limits
+        # The project store of the message files. None: the chat takes no files.
+        self._prompt_files = prompt_files
+        # The run sends the files of this number of latest turns to the model.
+        self._file_history_turns = file_history_turns
 
     def run_turn(self, *, command: RunTurnCommandDTO) -> None:
         """Run a queued turn. A failure records its code and does not raise."""
         run_input = self._repository.claim_turn(
-            command=ClaimTurnCommandDTO(turn_id=command.turn_id),
+            command=ClaimTurnCommandDTO(
+                turn_id=command.turn_id,
+                history_turns=self._file_history_turns,
+            ),
         )
         if run_input is None:
             logger.info("Turn %s is not in the queue. Skip it.", command.turn_id)
@@ -91,12 +107,18 @@ class TurnRunService:
         *,
         run_input: TurnRunInputDTO,
     ) -> tuple[TurnSavedResultDTO, TurnEventDTO]:
-        outcome = self._run(run_input=run_input)
+        files = self._load_files(run_input=run_input)
+        outcome = self._run(run_input=run_input, files=files)
         pending = outcome.pending_approvals
+        # The history keeps no file bytes. The next run loads them again.
+        new_messages = without_file_data(
+            outcome.new_messages,
+            file_ids={file.file_id for file in files},
+        )
         saved = self._repository.save_turn_result(
             command=SaveTurnResultCommandDTO(
                 turn_id=run_input.turn_id,
-                new_messages=tuple(messages_to_json(list(outcome.new_messages))),
+                new_messages=tuple(messages_to_json(new_messages)),
                 pending=pending_to_json(pending),
                 approvals=describe_pending(pending) if pending is not None else (),
                 usage=_usage(outcome.usage),
@@ -106,7 +128,17 @@ class TurnRunService:
             return saved, ApprovalRequestedEventDTO(approvals=describe_pending(pending))
         return saved, TurnDoneEventDTO(text=outcome.reply_text or "")
 
-    def _run(self, *, run_input: TurnRunInputDTO) -> TurnOutcome:
+    def _load_files(self, *, run_input: TurnRunInputDTO) -> tuple[PromptFile, ...]:
+        if self._prompt_files is None or not run_input.recent_turn_ids:
+            return ()
+        return self._prompt_files.load(turn_ids=run_input.recent_turn_ids)
+
+    def _run(
+        self,
+        *,
+        run_input: TurnRunInputDTO,
+        files: Sequence[PromptFile],
+    ) -> TurnOutcome:
         spec = self._specs.get(run_input.agent_name)
         if spec is None:
             msg = f"No agent has the name {run_input.agent_name!r}."
@@ -125,8 +157,11 @@ class TurnRunService:
             return self._runner.run(
                 spec=spec,
                 model=model,
-                history=messages_from_json(list(run_input.history)),
-                prompt=run_input.prompt,
+                history=with_file_data(
+                    messages_from_json(list(run_input.history)),
+                    files=files,
+                ),
+                prompt=_prompt(run_input=run_input, files=files),
                 pending=pending_from_json(run_input.pending),
                 decisions=run_input.decisions,
                 deps=deps,
@@ -187,6 +222,20 @@ class TurnRunService:
                 error_code=error_code,
             ),
         )
+
+
+def _prompt(
+    *,
+    run_input: TurnRunInputDTO,
+    files: Sequence[PromptFile],
+) -> str | list[UserContent] | None:
+    """The prompt of a first run, with the files of this turn. None for a resume."""
+    if run_input.prompt is None:
+        return None
+    return user_prompt(
+        text=run_input.prompt,
+        files=[file for file in files if file.turn_id == run_input.turn_id],
+    )
 
 
 def _error_code(error: Exception) -> str:

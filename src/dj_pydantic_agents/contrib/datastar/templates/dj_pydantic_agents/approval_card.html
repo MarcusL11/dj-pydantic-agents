@@ -16,7 +16,7 @@ template must keep that partial.
         <span class="djpa-approval__decision">{% translate "Denied" %}</span>
       {% else %}
         <form class="djpa-approval__form"
-              data-on:submit="@post('{% url 'dj_pydantic_agents:decide_approval' approval.approval_id %}', {contentType: 'form', headers: {'X-CSRFToken': '{{ csrf_token }}'}})">
+              data-on:submit="@post('{% url 'dj_pydantic_agents:decide_approval' approval.approval_id %}', {contentType: 'form', {% include "dj_pydantic_agents/csrf_option.html" %}})">
           <button type="submit" name="approved" value="true" class="djpa-approval__approve">{% translate "Approve" %}</button>
           <button type="submit" name="approved" value="false" class="djpa-approval__deny">{% translate "Deny" %}</button>
         </form>

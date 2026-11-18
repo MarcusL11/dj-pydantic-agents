@@ -23,6 +23,7 @@ from dj_pydantic_agents.composition import build_reply_sanitizer
 from dj_pydantic_agents.contrib.datastar.dtos import ApprovalDecisionPayloadDTO
 from dj_pydantic_agents.contrib.datastar.dtos import SendMessagePayloadDTO
 from dj_pydantic_agents.contrib.datastar.rendering import render_approval_actions
+from dj_pydantic_agents.contrib.datastar.rendering import render_form_error
 from dj_pydantic_agents.contrib.datastar.rendering import render_message_form
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply
 from dj_pydantic_agents.contrib.datastar.rendering import render_reply_text
@@ -44,6 +45,7 @@ from dj_pydantic_agents.errors import AgentNotFound
 from dj_pydantic_agents.errors import ApprovalNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
 from dj_pydantic_agents.errors import DjPydanticAgentsError
+from dj_pydantic_agents.errors import FilesRefused
 from dj_pydantic_agents.errors import TurnInProgress
 from dj_pydantic_agents.errors import TurnNotQueued
 from dj_pydantic_agents.kit.events import START_EVENT_ID
@@ -83,6 +85,9 @@ CATCH_UP_SECONDS = 0.05
 STREAM_SIGNAL = "_djpaStream"
 TRANSCRIPT_SELECTOR = "#djpa-transcript"
 FORM_SELECTOR = "#djpa-message-form"
+FORM_ERROR_SELECTOR = "#djpa-message-form-error"
+# The form field of each file of a message. PROMPT_FILES gives the IDs.
+FILE_FIELD = "file"
 KEEP_ALIVE = DatastarEvent(": keep-alive\n\n")
 
 _ERROR_STATUSES: tuple[tuple[type[DjPydanticAgentsError], int], ...] = (
@@ -97,29 +102,45 @@ _HANDLED_ERRORS = tuple(error_type for error_type, _ in _ERROR_STATUSES)
 
 @require_POST
 async def send_message(request: HttpRequest, conversation_id: str) -> HttpResponseBase:
-    """Start a turn. Show the message, a reply that streams, and a closed form."""
+    """Start a turn. Show the message, a reply that streams, and a closed form.
+
+    The message takes the files of its "file" fields. If PROMPT_FILES refuses
+    them, no turn starts, and the form shows the reason.
+    """
     user = await request.auser()
     if not user.is_authenticated:
         return HttpResponse(status=403)
     try:
-        payload = SendMessagePayloadDTO(prompt=request.POST.get("prompt", ""))
+        payload = SendMessagePayloadDTO(
+            prompt=request.POST.get("prompt", ""),
+            file_ids=tuple(request.POST.getlist(FILE_FIELD)),
+        )
     except ValidationError:
         return HttpResponse(status=400)
     command = StartTurnCommandDTO(
         conversation_id=conversation_id,
         user_id=user.pk,
         prompt=payload.prompt,
+        file_ids=payload.file_ids,
     )
     csrf_token = get_token(request)
-    message = _append(render_transcript_line(kind="user", text=payload.prompt))
     try:
         started = await database_sync_to_async(_start_turn)(command)
     except TurnNotQueued as error:
+        message = _append(render_transcript_line(kind="user", text=payload.prompt))
         return _patches(message, *_failed_turn(error, csrf_token))
+    except FilesRefused as error:
+        return _patches(_form_error(str(error)))
     except _HANDLED_ERRORS as error:
         return _error_response(error)
     return _patches(
-        message,
+        _append(
+            render_transcript_line(
+                kind="user",
+                text=payload.prompt,
+                files=started.files,
+            ),
+        ),
         _append(render_reply(turn_id=started.turn_id)),
         _form(conversation_id=conversation_id, is_closed=True, csrf_token=csrf_token),
     )
@@ -484,6 +505,15 @@ def _form(
             focus=focus,
         ),
         selector=FORM_SELECTOR,
+        mode=ElementPatchMode.REPLACE,
+    )
+
+
+def _form_error(message: str) -> DatastarEvent:
+    """Show the error in the form. The typed text and the files stay."""
+    return SSE.patch_elements(
+        render_form_error(message=message),
+        selector=FORM_ERROR_SELECTOR,
         mode=ElementPatchMode.REPLACE,
     )
 

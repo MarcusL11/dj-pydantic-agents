@@ -1,6 +1,7 @@
 """Complete atomic mutations of conversations, turns and approvals."""
 
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from typing import Literal
 
 from django.db import transaction
@@ -25,12 +26,17 @@ from dj_pydantic_agents.dtos.turn_commands import TurnSavedResultDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnStartedResultDTO
 from dj_pydantic_agents.errors import ApprovalNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
+from dj_pydantic_agents.errors import FilesRefused
 from dj_pydantic_agents.errors import TurnInProgress
 from dj_pydantic_agents.errors import TurnStateConflict
+from dj_pydantic_agents.extensions import PromptFiles  # noqa: TC001
 from dj_pydantic_agents.models import ACTIVE_TURN_STATUSES
 from dj_pydantic_agents.models import Conversation
 from dj_pydantic_agents.models import PendingApproval
 from dj_pydantic_agents.models import Turn
+
+if TYPE_CHECKING:
+    from dj_pydantic_agents.kit.attachments import FileRefDTO
 
 TITLE_LENGTH = 80
 
@@ -93,7 +99,17 @@ class TurnCommandRepository:
         conversation.delete()
 
     @transaction.atomic
-    def start_turn(self, *, command: StartTurnCommandDTO) -> TurnStartedResultDTO:
+    def start_turn(
+        self,
+        *,
+        command: StartTurnCommandDTO,
+        prompt_files: PromptFiles | None,
+    ) -> TurnStartedResultDTO:
+        """Queue the message as a new turn, and bind its files to the turn.
+
+        PROMPT_FILES binds the files in this transaction. If it refuses them,
+        the rollback also removes the turn.
+        """
         conversation = (
             Conversation.objects.select_for_update()  # type: ignore[misc]
             .filter(id=command.conversation_id, owner_id=command.user_id)
@@ -118,7 +134,15 @@ class TurnCommandRepository:
             prompt=command.prompt,
         )
         turn.save(force_insert=True)
-        return TurnStartedResultDTO(turn_id=turn.id, conversation_id=conversation.id)
+        return TurnStartedResultDTO(
+            turn_id=turn.id,
+            conversation_id=conversation.id,
+            files=_claim_files(
+                command=command,
+                turn_id=turn.id,
+                prompt_files=prompt_files,
+            ),
+        )
 
     @transaction.atomic
     def claim_turn(self, *, command: ClaimTurnCommandDTO) -> TurnRunInputDTO | None:
@@ -157,6 +181,7 @@ class TurnCommandRepository:
             prompt=turn.prompt if pending is None else None,
             pending=pending,
             decisions=decisions,
+            recent_turn_ids=_recent_turn_ids(turn=turn, count=command.history_turns),
         )
 
     @transaction.atomic
@@ -305,6 +330,37 @@ def _locked_turn(*, turn_id: str, statuses: tuple[str, ...]) -> Turn:
         msg = f"The turn is not in one of these states: {', '.join(statuses)}."
         raise TurnStateConflict(msg)
     return turn
+
+
+def _claim_files(
+    *,
+    command: StartTurnCommandDTO,
+    turn_id: str,
+    prompt_files: PromptFiles | None,
+) -> tuple[FileRefDTO, ...]:
+    if not command.file_ids:
+        return ()
+    if prompt_files is None:
+        msg = "This chat takes no files."
+        raise FilesRefused(msg)
+    return prompt_files.claim(
+        conversation_id=command.conversation_id,
+        user_id=command.user_id,
+        turn_id=turn_id,
+        file_ids=command.file_ids,
+    )
+
+
+def _recent_turn_ids(*, turn: Turn, count: int) -> tuple[str, ...]:
+    """The latest turns of the conversation up to this turn, newest first."""
+    return tuple(
+        Turn.objects.filter(
+            conversation_id=turn.conversation_id,
+            created_at__lte=turn.created_at,
+        )
+        .order_by("-created_at", "-id")
+        .values_list("id", flat=True)[:count],
+    )
 
 
 def _title_from_prompt(prompt: str) -> str:

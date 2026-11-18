@@ -22,6 +22,7 @@ from dj_pydantic_agents.extensions import AgentPermission
 from dj_pydantic_agents.extensions import DepsFactory
 from dj_pydantic_agents.extensions import EventTransport
 from dj_pydantic_agents.extensions import ModelFactory
+from dj_pydantic_agents.extensions import PromptFiles
 from dj_pydantic_agents.extensions import ReplySanitizer
 from dj_pydantic_agents.extensions import TaskRunner
 from dj_pydantic_agents.kit.specs import AgentSpec
@@ -51,6 +52,16 @@ _CONTRACTS: tuple[tuple[str, tuple[_Method, ...]], ...] = (
     ),
     ("SANITIZER", (("to_html", ReplySanitizer.to_html),)),
     ("TASK_RUNNER", (("enqueue", TaskRunner.enqueue),)),
+    (
+        "PROMPT_FILES",
+        (
+            ("pending", PromptFiles.pending),
+            ("claim", PromptFiles.claim),
+            ("describe", PromptFiles.describe),
+            ("load", PromptFiles.load),
+            ("forget", PromptFiles.forget),
+        ),
+    ),
 )
 
 
@@ -77,6 +88,7 @@ def check_settings(
         + _redis_url_errors(configured)
         + _celery_app_errors(configured)
         + _usage_limit_errors(configured)
+        + _file_history_errors(configured)
     )
 
 
@@ -174,6 +186,13 @@ def _usage_limit_errors(configured: Mapping[str, Any]) -> list[Error]:
         UsageLimits(**values)
     except TypeError as error:
         return [_error("E007", f"USAGE_LIMITS is not valid for UsageLimits: {error}.")]
+    return []
+
+
+def _file_history_errors(configured: Mapping[str, Any]) -> list[Error]:
+    turns = configured.get("FILE_HISTORY_TURNS", 1)
+    if isinstance(turns, bool) or not isinstance(turns, int) or turns < 1:
+        return [_error("E008", "FILE_HISTORY_TURNS must be an integer of 1 or more.")]
     return []
 
 

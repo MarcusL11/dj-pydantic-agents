@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
     from dj_pydantic_agents.dtos.turn_commands import UserId
+    from dj_pydantic_agents.kit.attachments import FileRefDTO
+    from dj_pydantic_agents.kit.attachments import PromptFile
     from dj_pydantic_agents.kit.events import StreamedTurnEventDTO
     from dj_pydantic_agents.kit.events import TurnEventDTO
     from dj_pydantic_agents.kit.roles import ModelRole
@@ -87,3 +89,54 @@ class TaskRunner(Protocol):
     """
 
     def enqueue(self, *, turn_id: str) -> None: ...
+
+
+class PromptFiles(Protocol):
+    """PROMPT_FILES: the files of the user messages. The project stores them.
+
+    The package keeps only a reference of each file in the history: its ID,
+    its name and its type. With no PROMPT_FILES, the chat takes no files.
+    """
+
+    def pending(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+    ) -> tuple[FileRefDTO, ...]:
+        """The files that wait for the next message of the user, oldest first."""
+        ...
+
+    def claim(
+        self,
+        *,
+        conversation_id: str,
+        user_id: UserId,
+        turn_id: str,
+        file_ids: tuple[str, ...],
+    ) -> tuple[FileRefDTO, ...]:
+        """Bind the pending files to the new turn, or raise FilesRefused.
+
+        start_turn() calls this inside its transaction, after it adds the
+        turn. An error also removes the turn.
+        """
+        ...
+
+    def describe(self, *, file_ids: tuple[str, ...]) -> tuple[FileRefDTO, ...]:
+        """The files of the transcript, with their size and URL.
+
+        Leave out an unknown ID. The page then shows the name from the history.
+        """
+        ...
+
+    def load(self, *, turn_ids: tuple[str, ...]) -> tuple[PromptFile, ...]:
+        """The bytes of the files of these turns, for one run. A worker calls this."""
+        ...
+
+    def forget(self, *, conversation_id: str) -> None:
+        """Delete the files of a deleted conversation.
+
+        delete_conversation() calls this after its commit. The package logs an
+        error and does not raise it, because the conversation is gone.
+        """
+        ...

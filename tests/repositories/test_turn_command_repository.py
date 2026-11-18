@@ -24,6 +24,7 @@ from dj_pydantic_agents.dtos.turn_commands import StartTurnCommandDTO
 from dj_pydantic_agents.dtos.turn_commands import TurnUsageDTO
 from dj_pydantic_agents.errors import ApprovalNotPending
 from dj_pydantic_agents.errors import ConversationNotFound
+from dj_pydantic_agents.errors import FilesRefused
 from dj_pydantic_agents.errors import TurnInProgress
 from dj_pydantic_agents.errors import TurnStateConflict
 from dj_pydantic_agents.kit.events import PendingApprovalDTO
@@ -39,6 +40,7 @@ from tests.factories import ConversationFactory
 from tests.factories import PendingApprovalFactory
 from tests.factories import TurnFactory
 from tests.factories import UserFactory
+from tests.fakes import FakePromptFiles
 from tests.testcases import TestCase
 
 if TYPE_CHECKING:
@@ -217,14 +219,61 @@ class TestStartTurn(TestCase):
         cls.owner = UserFactory.create()
         cls.conversation = ConversationFactory.create(owner=cls.owner)
 
-    def start(self, *, prompt: str = "Hi", user_id: int | None = None):
+    def setUp(self):
+        FakePromptFiles.reset()
+
+    def start(
+        self,
+        *,
+        prompt: str = "Hi",
+        user_id: int | None = None,
+        file_ids: tuple[str, ...] = (),
+        prompt_files: FakePromptFiles | None = None,
+    ):
         return TurnCommandRepository().start_turn(
             command=StartTurnCommandDTO(
                 conversation_id=self.conversation.id,
                 user_id=self.owner.pk if user_id is None else user_id,
                 prompt=prompt,
+                file_ids=file_ids,
             ),
+            prompt_files=prompt_files,
         )
+
+    def test_the_turn_claims_the_files_of_the_message(self):
+        result = self.start(file_ids=("fil_1", "fil_2"), prompt_files=FakePromptFiles())
+
+        assert FakePromptFiles.claims == [
+            {
+                "conversation_id": self.conversation.id,
+                "user_id": self.owner.pk,
+                "turn_id": result.turn_id,
+                "file_ids": ("fil_1", "fil_2"),
+            },
+        ]
+        assert [file.file_id for file in result.files] == ["fil_1", "fil_2"]
+
+    def test_a_message_with_no_files_claims_nothing(self):
+        result = self.start(prompt_files=FakePromptFiles())
+
+        assert FakePromptFiles.claims == []
+        assert result.files == ()
+
+    def test_a_refusal_of_the_files_removes_the_turn_and_the_title(self):
+        FakePromptFiles.refusal = FilesRefused("A file expired.")
+
+        with self.assertRaisesRegex(FilesRefused, "A file expired."):
+            self.start(file_ids=("fil_1",), prompt_files=FakePromptFiles())
+
+        self.conversation.refresh_from_db()
+        assert not Turn.objects.exists()
+        assert self.conversation.title == ""
+
+    def test_files_with_no_prompt_files_are_refused(self):
+        with self.assertRaisesRegex(FilesRefused, "This chat takes no files."):
+            self.start(file_ids=("fil_1",))
+
+        assert not Turn.objects.exists()
 
     def test_queues_a_turn_and_keeps_the_messages(self):
         result = self.start(prompt="Find the watch\nwith a blue dial")
@@ -315,10 +364,33 @@ class TestClaimTurn(TestCase):
             prompt="Mail Ada",
         )
 
-    def claim(self):
+    def claim(self, *, history_turns: int = 2):
         return TurnCommandRepository().claim_turn(
-            command=ClaimTurnCommandDTO(turn_id=self.turn.id),
+            command=ClaimTurnCommandDTO(
+                turn_id=self.turn.id,
+                history_turns=history_turns,
+            ),
         )
+
+    def test_gets_the_ids_of_the_latest_turns_newest_first(self):
+        now = timezone.now()
+        older, earlier = (
+            TurnFactory.create(
+                conversation=self.conversation,
+                requested_by=self.owner,
+                status=Turn.Status.DONE,
+            )
+            for _ in range(2)
+        )
+        Turn.objects.filter(id=older.id).update(created_at=now - timedelta(hours=2))
+        Turn.objects.filter(id=earlier.id).update(created_at=now - timedelta(hours=1))
+        Turn.objects.filter(id=self.turn.id).update(created_at=now)
+        TurnFactory.create(requested_by=self.owner)  # another conversation
+
+        run_input = self.claim(history_turns=2)
+
+        assert run_input is not None
+        assert run_input.recent_turn_ids == (self.turn.id, earlier.id)
 
     def test_a_first_run_gets_the_prompt_and_the_history(self):
         run_input = self.claim()

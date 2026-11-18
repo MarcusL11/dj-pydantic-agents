@@ -10,6 +10,8 @@ from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.messages import UserPromptPart
 
+from dj_pydantic_agents.kit.attachments import FileRefDTO
+from dj_pydantic_agents.kit.attachments import split_prompt
 from dj_pydantic_agents.kit.dtos import InternalDTO
 
 if TYPE_CHECKING:
@@ -27,6 +29,8 @@ class TranscriptLineDTO(InternalDTO):
     kind: Literal["user", "assistant", "tool_call", "tool_result"]
     text: str
     tool_name: str | None = None
+    # The files of a user line.
+    files: tuple[FileRefDTO, ...] = ()
 
 
 def transcript_lines(messages: Sequence[ModelMessage]) -> tuple[TranscriptLineDTO, ...]:
@@ -62,9 +66,13 @@ def last_reply_text(messages: Sequence[ModelMessage]) -> str:
 
 def _line(part: ModelRequestPart | ModelResponsePart) -> TranscriptLineDTO | None:
     match part:
-        case UserPromptPart(content=content):
-            text = content if isinstance(content, str) else _prompt_text(content)
+        case UserPromptPart(content=str() as text):
             return TranscriptLineDTO(kind="user", text=text)
+        case UserPromptPart(content=content):
+            text, files = split_prompt(content)
+            if not text and not files:
+                text = NON_TEXT_PROMPT
+            return TranscriptLineDTO(kind="user", text=text, files=files)
         case TextPart(content=text) if text:
             return TranscriptLineDTO(kind="assistant", text=text)
         case (
@@ -83,8 +91,3 @@ def _line(part: ModelRequestPart | ModelResponsePart) -> TranscriptLineDTO | Non
             )
         case _:
             return None
-
-
-def _prompt_text(content: Sequence[object]) -> str:
-    texts = [item for item in content if isinstance(item, str)]
-    return "\n".join(texts) if texts else NON_TEXT_PROMPT
